@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
-  ActivityIndicator, Modal, FlatList, KeyboardAvoidingView, Platform, Alert
+  ActivityIndicator, Modal, FlatList, KeyboardAvoidingView, Platform, Alert, Image
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { AppContext } from '../context/AppContext';
@@ -373,6 +373,18 @@ const Review = ({ route, navigation }) => {
               </Text>
             </View>
           </View>
+
+          {/* Scanned Image Preview */}
+          {receipt.imageUrl ? (
+            <View style={styles.imageCard}>
+              <Text style={styles.sectionHeading}>معاينة الفاتورة المصورة</Text>
+              <Image 
+                source={{ uri: `${apiUrl.replace('/api', '')}/${receipt.imageUrl}` }} 
+                style={styles.receiptImage}
+                resizeMode="contain"
+              />
+            </View>
+          ) : null}
 
           {/* WHO PAID Section */}
           <View style={styles.sectionCard}>
@@ -1253,6 +1265,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center', gap: 8,
   },
   splitSaveBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  imageCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: 20,
+    gap: 12,
+  },
+  sectionHeading: {
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: '700',
+    textAlign: 'right',
+    marginBottom: 4,
+  },
+  receiptImage: {
+    width: '100%',
+    height: 350,
+    borderRadius: 16,
+  },
 });
 
 export default Review;

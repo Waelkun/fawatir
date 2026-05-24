@@ -81,8 +81,8 @@ app.listen(PORT, async () => {
       // Seed default wallets
       await prisma.wallet.createMany({
         data: [
-          { userId: user.id, name: 'نقدي (Cash)', type: 'CASH', balance: 500000, color: '#4CAF50' },
-          { userId: user.id, name: 'الحساب البنكي', type: 'BANK', balance: 1000000, color: '#4CC9F0' }
+          { userId: user.id, name: 'نقدي (Cash)', type: 'CASH', balance: 0, color: '#4CAF50' },
+          { userId: user.id, name: 'الحساب البنكي', type: 'BANK', balance: 0, color: '#4CC9F0' }
         ]
       });
       console.log('✅ Default wallets created automatically.');

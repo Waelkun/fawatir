@@ -12,10 +12,23 @@ const formatWallet = (wallet) => ({
 exports.listWallets = async (req, res) => {
   try {
     const userId = req.userId;
-    const wallets = await prisma.wallet.findMany({
+    let wallets = await prisma.wallet.findMany({
       where: { userId },
       orderBy: { createdAt: 'asc' }
     });
+
+    if (wallets.length === 0) {
+      await prisma.wallet.createMany({
+        data: [
+          { userId, name: 'نقدي (Cash)', type: 'CASH', balance: 0, color: '#4CAF50' },
+          { userId, name: 'الحساب البنكي', type: 'BANK', balance: 0, color: '#4CC9F0' }
+        ]
+      });
+      wallets = await prisma.wallet.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'asc' }
+      });
+    }
 
     res.json({ wallets: wallets.map(formatWallet) });
   } catch (err) {
