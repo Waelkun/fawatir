@@ -1,0 +1,166 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           Int              @id @default(autoincrement())
+  email        String           @unique
+  password     String
+  name         String?
+  baseCurrency String           @default("SAR")
+  createdAt    DateTime         @default(now())
+  receipts     Receipt[]
+  products     Product[]
+  people       Person[]
+  settlements  DebtSettlement[]
+  wallets      Wallet[]
+}
+
+model Wallet {
+  id           Int                 @id @default(autoincrement())
+  userId       Int
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  type         String              @default("CASH") // CASH, BANK, VISA, WALLET
+  balance      Float               @default(0)      // Stored in Cents (e.g. 1000 = 10.00)
+  color        String              @default("#4CC9F0")
+  createdAt         DateTime            @default(now())
+  receipts          Receipt[]           @relation("PrimaryReceipts")
+  secondaryReceipts Receipt[]           @relation("SecondaryReceipts")
+  settlements       DebtSettlement[]
+  transactions      WalletTransaction[]
+}
+
+model Person {
+  id            Int              @id @default(autoincrement())
+  userId        Int
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  color         String           @default("#4CC9F0")
+  emoji         String           @default("👤")
+  createdAt     DateTime         @default(now())
+  splits        ReceiptItemSplit[]
+  settlements   DebtSettlement[]
+  payerReceipts Receipt[]        @relation("ReceiptPayer")
+
+  @@unique([userId, name])
+}
+
+model Receipt {
+  id            Int              @id @default(autoincrement())
+  userId        Int
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  storeName     String
+  date          DateTime
+  total         Int              // Stored in Cents
+  currency      String
+  tax           Int              @default(0) // Stored in Cents
+  discount      Int              @default(0) // Stored in Cents
+  imageUrl      String?
+  confidence    Float
+  status        String           @default("APPROVED") // APPROVED, NEEDS_REVIEW
+  payerType     String           @default("USER") // USER, PERSON
+  payerPersonId Int?
+  payerPerson   Person?          @relation("ReceiptPayer", fields: [payerPersonId], references: [id], onDelete: SetNull)
+  walletId              Int?
+  wallet                Wallet?          @relation("PrimaryReceipts", fields: [walletId], references: [id], onDelete: SetNull)
+  secondaryWalletId     Int?
+  secondaryWalletAmount Int              @default(0) // Stored in Cents
+  secondaryWallet       Wallet?          @relation("SecondaryReceipts", fields: [secondaryWalletId], references: [id], onDelete: SetNull)
+  payerName             String?          // Retained for backward compatibility
+  items                 ReceiptItem[]
+  settlements           DebtSettlement[]
+  createdAt             DateTime         @default(now())
+}
+
+model Product {
+  id          Int            @id @default(autoincrement())
+  userId      Int
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String         // Normalised Arabic name, e.g. "صدر دجاج"
+  category    String         // e.g. "طعام ومشروبات", "تقنية"
+  description String?
+  imageUrl    String?
+  aliases     ProductAlias[]
+  items       ReceiptItem[]
+  createdAt   DateTime       @default(now())
+
+  @@unique([userId, name])
+}
+
+model ProductAlias {
+  id        Int     @id @default(autoincrement())
+  productId Int
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  alias     String  // Original scanned name, e.g. "Chicken Breast"
+
+  @@unique([productId, alias])
+}
+
+model ReceiptItem {
+  id           Int               @id @default(autoincrement())
+  receiptId    Int
+  receipt      Receipt           @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  productId    Int
+  product      Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  originalName String            // The name as it appeared in this specific receipt
+  quantity     Float             @default(1)
+  price        Int               // Price per unit in Cents
+  discount     Int               @default(0) // In Cents
+  total        Int               // (quantity * price) - discount (In Cents)
+  splitMethod  String            @default("NONE") // NONE, EQUAL, PERCENTAGE, CUSTOM
+  splits       ReceiptItemSplit[]
+}
+
+model ReceiptItemSplit {
+  id            Int         @id @default(autoincrement())
+  receiptItemId Int
+  receiptItem   ReceiptItem @relation(fields: [receiptItemId], references: [id], onDelete: Cascade)
+  personId      Int?
+  person        Person?     @relation(fields: [personId], references: [id], onDelete: Cascade)
+  personName    String      // Stored name for display even if person is deleted
+  amount        Int         // Stored in Cents
+  ratio         Float       @default(0) // Percentage share (e.g. 50.0)
+  isUser        Boolean     @default(false) // true if this split belongs to the main user
+}
+
+model DebtSettlement {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  personId  Int
+  person    Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
+  receiptId Int?
+  receipt   Receipt? @relation(fields: [receiptId], references: [id], onDelete: SetNull)
+  amount    Float    // Stored in Cents. Positive = person paid user; Negative = user paid person
+  date      DateTime @default(now())
+  notes     String?
+  walletId  Int?
+  wallet    Wallet?  @relation(fields: [walletId], references: [id], onDelete: SetNull)
+}
+
+model ExchangeRate {
+  id        Int      @id @default(autoincrement())
+  from      String
+  to        String
+  rate      Float
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@unique([from, to])
+}
+
+model WalletTransaction {
+  id          Int      @id @default(autoincrement())
+  walletId    Int
+  wallet      Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  amount      Float    // Stored in Cents. Positive = Deposit/Inflow, Negative = Withdrawal/Outflow
+  date        DateTime @default(now())
+  description String
+  createdAt   DateTime @default(now())
+}
+
