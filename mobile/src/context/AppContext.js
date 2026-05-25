@@ -7,10 +7,7 @@ export const AppContext = createContext();
 
 // Helper to determine default API URL
 const getDefaultApiUrl = () => {
-  if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:5000/api';
-  }
-  return 'http://localhost:5000/api';
+  return 'https://fawatir2.onrender.com/api';
 };
 
 export const AppProvider = ({ children }) => {
