@@ -1,11 +1,12 @@
 import React, { useContext, useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Platform, Dimensions, Modal, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Platform, Dimensions, Modal, TextInput, ActivityIndicator, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { AppContext } from '../context/AppContext';
 import { COLORS } from '../theme/colors';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Path, Defs, LinearGradient as SvgGradient, Stop, Circle, Line, Rect, Text as SvgText } from 'react-native-svg';
 import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
 
@@ -68,6 +69,26 @@ const Dashboard = ({ navigation }) => {
   // Unified Transactions Ledger filter state
   const [ledgerTypeFilter, setLedgerTypeFilter] = useState('all'); // 'all', 'expenses', 'deposits'
   const [ledgerPersonFilter, setLedgerPersonFilter] = useState('all'); // 'all', 'user', or personId (number)
+
+  const [showBalanceModal, setShowBalanceModal] = useState(false);
+  const [availableBalance, setAvailableBalance] = useState('0');
+  const [inputBalance, setInputBalance] = useState('0');
+  const [settlingDebtId, setSettlingDebtId] = useState(null);
+
+  useEffect(() => {
+    const loadSavedBalance = async () => {
+      try {
+        const saved = await AsyncStorage.getItem('available_balance');
+        if (saved !== null) {
+          setAvailableBalance(saved);
+          setInputBalance(saved);
+        }
+      } catch (e) {
+        console.log('Failed to load saved balance:', e);
+      }
+    };
+    loadSavedBalance();
+  }, []);
 
   const loadData = useCallback(async (filterType = chartFilter, start = startDateRange, end = endDateRange, mode = spendingMode) => {
     setLoadingTrends(true);
@@ -572,13 +593,16 @@ const Dashboard = ({ navigation }) => {
           </View>
 
           {/* Balance / Budget Glass Card */}
-          <View style={styles.balanceCard}>
+          <TouchableOpacity 
+            style={styles.balanceCard}
+            onPress={() => setShowBalanceModal(true)}
+          >
             <LinearGradient
               colors={['rgba(21, 24, 33, 0.9)', 'rgba(30, 34, 45, 0.4)']}
               style={styles.balanceCardGrad}
             >
               <View style={{ flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <Text style={styles.balanceLabel}>إجمالي الرصيد المتوفر</Text>
+                <Text style={styles.balanceLabel}>إجمالي الرصيد المتوفر (اضغط للمعاينة 📊)</Text>
               </View>
               <Text style={styles.balanceVal}>
                 {(stats.totalBalance || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -606,7 +630,7 @@ const Dashboard = ({ navigation }) => {
                 </View>
               </View>
             </LinearGradient>
-          </View>
+          </TouchableOpacity>
 
           {/* Wallets Horizontal List */}
           {wallets && wallets.length > 0 && (
