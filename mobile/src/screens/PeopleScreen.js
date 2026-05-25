@@ -181,6 +181,14 @@ const PeopleScreen = ({ navigation }) => {
         <View style={{ height: 100 }} />
       </ScrollView>
 
+      {/* Floating Add Debt Action Button */}
+      <TouchableOpacity
+        style={styles.fabAddDebt}
+        onPress={() => navigation.navigate('AddDebt')}
+      >
+        <Ionicons name="receipt" size={24} color={COLORS.white} />
+      </TouchableOpacity>
+
       {/* Add Person Modal */}
       <Modal visible={showAddModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
@@ -493,6 +501,22 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  fabAddDebt: {
+    position: 'absolute',
+    bottom: 30,
+    left: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#7209B7',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#7209B7',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 8,
+  },
 });
 
 export default PeopleScreen;

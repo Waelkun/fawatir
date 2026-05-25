@@ -1314,31 +1314,20 @@ const Dashboard = ({ navigation }) => {
           </View>
         </Modal>
 
-        {/* Dual FAB buttons Container */}
-        <View style={styles.fabContainer}>
-          {/* Add Debt Screen Button */}
-          <TouchableOpacity
-            style={[styles.miniFab, { backgroundColor: '#7209B7' }]}
-            onPress={() => navigation.navigate('AddDebt')}
+        {/* Floating Scanner Action Button */}
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={() => navigation.navigate('الماسح')}
+        >
+          <LinearGradient
+            colors={[COLORS.primary, COLORS.secondary]}
+            style={styles.fabGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
           >
-            <Ionicons name="people" size={20} color={COLORS.white} />
-          </TouchableOpacity>
-
-          {/* Floating Scanner Action Button */}
-          <TouchableOpacity
-            style={styles.fab}
-            onPress={() => navigation.navigate('الماسح')}
-          >
-            <LinearGradient
-              colors={[COLORS.primary, COLORS.secondary]}
-              style={styles.fabGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <Ionicons name="qr-code" size={26} color={COLORS.white} />
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
+            <Ionicons name="qr-code" size={26} color={COLORS.white} />
+          </LinearGradient>
+        </TouchableOpacity>
 
       </LinearGradient>
     </View>
@@ -2254,33 +2243,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
-  txWalletTag: {
-    color: COLORS.primary,
-    fontSize: 9,
-    backgroundColor: 'rgba(76, 201, 240, 0.08)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  fabContainer: {
+  fab: {
     position: 'absolute',
     bottom: 110,
-    left: 24,
-    alignItems: 'center',
-    gap: 12,
+    alignSelf: 'center',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
     zIndex: 99,
   },
-  miniFab: {
-    width: 46,
-    height: 46,
-    borderRadius: 16,
+  fabGradient: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 4,
   },
 });
 

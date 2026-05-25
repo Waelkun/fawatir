@@ -2,6 +2,16 @@ const prisma = require('../config/db');
 const aiService = require('../services/ai.service');
 const { convertCurrency } = require('../services/currency.service');
 
+const formatReceiptFromDb = (receipt) => {
+  if (!receipt) return null;
+  return {
+    ...receipt,
+    total: parseFloat((receipt.total / 100).toFixed(2)),
+    tax: parseFloat((receipt.tax / 100).toFixed(2)),
+    discount: parseFloat((receipt.discount / 100).toFixed(2)),
+  };
+};
+
 // Memory cache for AI insights
 let cachedInsights = null;
 let lastInsightsGenerationTime = null;
