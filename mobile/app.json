@@ -19,6 +19,18 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "b21102af-20b3-4bb7-9bad-8bd9327e2396"
+      }
+    },
+    "owner": "waelonaldo",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/b21102af-20b3-4bb7-9bad-8bd9327e2396"
     }
   }
 }
