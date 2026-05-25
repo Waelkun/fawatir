@@ -11,13 +11,8 @@ const getDefaultApiUrl = () => {
 };
 
 export const AppProvider = ({ children }) => {
-  const [token, setToken] = useState('mock-developer-token');
-  const [user, setUser] = useState({
-    id: 1,
-    email: 'alex@fintech.ai',
-    name: 'أليكس ستيرلينغ',
-    baseCurrency: 'SAR'
-  });
+  const [token, setToken] = useState(null);
+  const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [apiUrl, setApiUrl] = useState(getDefaultApiUrl());
   const [dashboardData, setDashboardData] = useState(null);
@@ -50,13 +45,21 @@ export const AppProvider = ({ children }) => {
           setMonthlyBudget(parseFloat(savedMonthlyBudget));
         }
 
-        axios.defaults.headers.common['Authorization'] = `Bearer mock-developer-token`;
+        const savedToken = await AsyncStorage.getItem('user_token');
+        if (savedToken) {
+          setToken(savedToken);
+          axios.defaults.headers.common['Authorization'] = `Bearer ${savedToken}`;
 
-        try {
-          const res = await axios.get(`${savedApiUrl || apiUrl || getDefaultApiUrl()}/auth/profile`);
-          setUser(res.data.user);
-        } catch (e) {
-          console.log('Server offline or profile unreachable, using developer fallback profile.');
+          try {
+            const res = await axios.get(`${savedApiUrl || apiUrl || getDefaultApiUrl()}/auth/profile`);
+            setUser(res.data.user);
+          } catch (e) {
+            console.log('Server offline or profile unreachable, keeping saved session.');
+          }
+        } else {
+          setToken(null);
+          setUser(null);
+          delete axios.defaults.headers.common['Authorization'];
         }
       } catch (e) {
         console.log('Bootstrap session initialization error:', e.message);
@@ -264,11 +267,20 @@ export const AppProvider = ({ children }) => {
     }
   };
 
-  const loginByName = async (name) => {
+  const loginByName = async (name, rememberMe = false) => {
     try {
       const res = await axios.post(`${apiUrl}/auth/simple-login`, { name });
       const { token: userToken, user: userData } = res.data;
-      await AsyncStorage.setItem('user_token', userToken);
+      
+      if (rememberMe) {
+        await AsyncStorage.setItem('user_token', userToken);
+        await AsyncStorage.setItem('remembered_name', name);
+      } else {
+        await AsyncStorage.removeItem('user_token');
+        await AsyncStorage.setItem('remembered_name', name); // Still remember name for UI pre-fill, but not session!
+      }
+      
+      axios.defaults.headers.common['Authorization'] = `Bearer ${userToken}`;
       setToken(userToken);
       setUser(userData);
       return { success: true };

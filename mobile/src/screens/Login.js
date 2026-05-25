@@ -1,6 +1,7 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppContext } from '../context/AppContext';
 import { COLORS } from '../theme/colors';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,8 +9,24 @@ import { Ionicons } from '@expo/vector-icons';
 const Login = ({ navigation }) => {
   const { loginByName, apiUrl, updateCustomApiUrl } = useContext(AppContext);
   const [name, setName] = useState('');
+  const [rememberMe, setRememberMe] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Load remembered name on startup
+  useEffect(() => {
+    const loadRememberedName = async () => {
+      try {
+        const savedName = await AsyncStorage.getItem('remembered_name');
+        if (savedName) {
+          setName(savedName);
+        }
+      } catch (e) {
+        console.log('Error loading remembered name:', e.message);
+      }
+    };
+    loadRememberedName();
+  }, []);
   
   // Server connection states
   const [showServerSettings, setShowServerSettings] = useState(false);
@@ -24,7 +41,7 @@ const Login = ({ navigation }) => {
     setError('');
     setLoading(true);
     
-    const result = await loginByName(name.trim());
+    const result = await loginByName(name.trim(), rememberMe);
     setLoading(false);
     
     if (!result.success) {
@@ -118,6 +135,20 @@ const Login = ({ navigation }) => {
                 />
               </View>
             </View>
+
+            {/* Remember Me Checkbox */}
+            <TouchableOpacity 
+              style={styles.rememberMeContainer}
+              onPress={() => setRememberMe(!rememberMe)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.rememberMeText}>تذكرني دائماً على هذا الجهاز</Text>
+              <Ionicons 
+                name={rememberMe ? "checkbox" : "square-outline"} 
+                size={20} 
+                color={rememberMe ? COLORS.primary : COLORS.textSecondary} 
+              />
+            </TouchableOpacity>
 
             {/* Submit Button */}
             <TouchableOpacity 
@@ -347,6 +378,19 @@ const styles = StyleSheet.create({
     color: COLORS.background,
     fontSize: 13,
     fontWeight: '700',
+  },
+  rememberMeContainer: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    gap: 10,
+    marginTop: 5,
+    paddingHorizontal: 4,
+  },
+  rememberMeText: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+    fontWeight: '600',
   },
 });
 
