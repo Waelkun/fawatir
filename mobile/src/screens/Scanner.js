@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, ActivityIndicator, Image, Dimensions } from 'react-native';
-import { CameraView, requestCameraPermissionsAsync, getCameraPermissionsAsync } from 'expo-camera';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { useIsFocused } from '@react-navigation/native';
 import { AppContext } from '../context/AppContext';
@@ -21,7 +21,7 @@ const IsCameraAvailable = isValidComponent(CameraView);
 const Scanner = ({ navigation }) => {
   const { apiUrl } = useContext(AppContext);
   const isFocused = useIsFocused();
-  const [hasCameraPermission, setHasCameraPermission] = useState(null);
+  const [permission, requestPermission] = useCameraPermissions();
   const [hasLibraryPermission, setHasLibraryPermission] = useState(null);
   const [type, setType] = useState('back');
   const [flash, setFlash] = useState('off');
@@ -31,45 +31,11 @@ const Scanner = ({ navigation }) => {
   const cameraRef = useRef(null);
   const scanLineAnim = useRef(new Animated.Value(0)).current;
 
+  const hasCameraPermission = permission ? permission.granted : null;
+
   // Request Permissions
   useEffect(() => {
     let active = true;
-
-    const checkCamera = async () => {
-      try {
-        // First check existing permission
-        let statusObj;
-        if (typeof getCameraPermissionsAsync === 'function') {
-          statusObj = await getCameraPermissionsAsync();
-        } else if (CameraView && typeof CameraView.getCameraPermissionsAsync === 'function') {
-          statusObj = await CameraView.getCameraPermissionsAsync();
-        }
-
-        if (statusObj && statusObj.status === 'granted') {
-          if (active) setHasCameraPermission(true);
-          return;
-        }
-
-        // If not already granted, request with a timeout
-        const requestPromise = typeof requestCameraPermissionsAsync === 'function'
-          ? requestCameraPermissionsAsync()
-          : (CameraView && typeof CameraView.requestCameraPermissionsAsync === 'function'
-            ? CameraView.requestCameraPermissionsAsync()
-            : Promise.reject(new Error('No request camera permission method found')));
-
-        const result = await Promise.race([
-          requestPromise,
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Permission request timeout')), 2500))
-        ]);
-
-        if (active) {
-          setHasCameraPermission(result && result.status === 'granted');
-        }
-      } catch (err) {
-        console.log('Camera permission check error:', err.message);
-        if (active) setHasCameraPermission(false);
-      }
-    };
 
     const checkLibrary = async () => {
       try {
@@ -95,13 +61,19 @@ const Scanner = ({ navigation }) => {
       }
     };
 
-    checkCamera();
     checkLibrary();
 
     return () => {
       active = false;
     };
   }, []);
+
+  // Request camera permission on mount if undetermined / not granted
+  useEffect(() => {
+    if (permission && !permission.granted && permission.canAskAgain) {
+      requestPermission();
+    }
+  }, [permission]);
 
   // Loop scan laser animation
   useEffect(() => {
