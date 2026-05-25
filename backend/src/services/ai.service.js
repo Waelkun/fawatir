@@ -3,7 +3,7 @@ const fs = require('fs');
 
 // Initialize Gemini API
 const getGenAIInstance = () => {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY || 'AIzaSyBI7WZwzkvDJ7zk13v_wsW-C-4q-Q4WRj4';
   if (!apiKey || apiKey.includes('YOUR_GEMINI_API_KEY')) {
     console.warn('تحذير: لم يتم إعداد GEMINI_API_KEY بشكل صحيح في ملف .env');
   }
