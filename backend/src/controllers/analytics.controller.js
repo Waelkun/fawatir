@@ -119,9 +119,9 @@ async function calcPersonFinancialDetails(personId, userId, baseCurrency) {
 }
 
 const getUnifiedTransactions = async (userId, baseCurrency) => {
-  // 1. Fetch receipts
+  // 1. Fetch receipts (excluding debts)
   const receipts = await prisma.receipt.findMany({
-    where: { userId },
+    where: { userId, isDebt: false },
     include: {
       items: {
         include: {
@@ -340,9 +340,31 @@ const getDashboardData = async (req, res) => {
       }
     }
 
-    // Recent receipts (latest 5)
+    // 4.1 Get active manual debts (isDebt = true, isSettled = false)
+    const activeDebts = await prisma.receipt.findMany({
+      where: {
+        userId,
+        isDebt: true,
+        isSettled: false
+      },
+      orderBy: { date: 'desc' }
+    });
+
+    let totalDebtReceivable = 0; // الديون التي لي
+    let totalDebtPayable = 0;    // الديون التي علي
+
+    for (const d of activeDebts) {
+      const amountInBase = await convertCurrency(d.total / 100, d.currency, baseCurrency);
+      if (d.debtType === 'receivable') {
+        totalDebtReceivable += amountInBase;
+      } else if (d.debtType === 'payable') {
+        totalDebtPayable += amountInBase;
+      }
+    }
+
+    // Recent receipts (latest 5, excluding debts)
     const recentReceipts = await prisma.receipt.findMany({
-      where: { userId },
+      where: { userId, isDebt: false },
       take: 5,
       orderBy: { date: 'desc' },
       include: {
@@ -378,7 +400,7 @@ const getDashboardData = async (req, res) => {
       (now - lastInsightsGenerationTime > cacheDurationMs && receipts.length !== lastReceiptCount);
 
     if (shouldRegenerate) {
-      const analyticsInput = receipts.slice(0, 15).map(r => ({
+      const analyticsInput = receipts.filter(r => !r.isDebt).slice(0, 15).map(r => ({
         store: r.storeName,
         date: r.date.toISOString().split('T')[0],
         total: r.total / 100,
@@ -399,8 +421,11 @@ const getDashboardData = async (req, res) => {
         monthlyExpenses: parseFloat(personalSpend30Days.toFixed(2)),
         cashOutflow: parseFloat(cashOutflow30Days.toFixed(2)),
         pendingReceivables: parseFloat(pendingReceivables.toFixed(2)),
-        pendingPayables: parseFloat(pendingPayables.toFixed(2))
+        pendingPayables: parseFloat(pendingPayables.toFixed(2)),
+        totalDebtReceivable: parseFloat(totalDebtReceivable.toFixed(2)),
+        totalDebtPayable: parseFloat(totalDebtPayable.toFixed(2))
       },
+      activeDebts: activeDebts.map(formatReceiptFromDb),
       recentTransactions: formattedRecentReceipts,
       recentProducts,
       aiInsights: cachedInsights,

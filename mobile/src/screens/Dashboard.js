@@ -1080,9 +1080,9 @@ const Dashboard = ({ navigation }) => {
                   >
                     <View style={styles.txIconContainer}>
                       <Ionicons 
-                        name={receipt.status === 'NEEDS_REVIEW' ? 'alert-circle' : 'checkmark-circle'} 
+                        name={receipt.isDebt ? 'people' : (receipt.status === 'NEEDS_REVIEW' ? 'alert-circle' : 'checkmark-circle')} 
                         size={22} 
-                        color={receipt.status === 'NEEDS_REVIEW' ? COLORS.warning : COLORS.success} 
+                        color={receipt.isDebt ? (receipt.debtType === 'receivable' ? '#4CAF50' : '#F44336') : (receipt.status === 'NEEDS_REVIEW' ? COLORS.warning : COLORS.success)} 
                       />
                     </View>
                     <View style={styles.txInfo}>
@@ -1100,13 +1100,13 @@ const Dashboard = ({ navigation }) => {
                     </View>
                     <View style={styles.txPriceCol}>
                       <Text style={styles.txAmount}>
-                        -{receipt.total.toFixed(2)} {receipt.currency}
+                        {receipt.isDebt ? '' : '-'}{receipt.total.toFixed(2)} {receipt.currency}
                       </Text>
                       <Text style={[
                         styles.txStatus,
-                        { color: receipt.status === 'NEEDS_REVIEW' ? COLORS.warning : COLORS.textSecondary }
+                        { color: receipt.isDebt ? (receipt.debtType === 'receivable' ? '#4CAF50' : '#F44336') : (receipt.status === 'NEEDS_REVIEW' ? COLORS.warning : COLORS.textSecondary) }
                       ]}>
-                        {receipt.status === 'NEEDS_REVIEW' ? 'يتطلب مراجعة' : 'معتمد'}
+                        {receipt.isDebt ? (receipt.debtType === 'receivable' ? '🤝 دين لي' : '💸 دين علي') : (receipt.status === 'NEEDS_REVIEW' ? 'يتطلب مراجعة' : 'معتمد')}
                       </Text>
                     </View>
                   </TouchableOpacity>
@@ -1123,20 +1123,198 @@ const Dashboard = ({ navigation }) => {
           <View style={{ height: 100 }} />
         </ScrollView>
 
-        {/* Floating Scanner Action Button */}
-        <TouchableOpacity
-          style={styles.fab}
-          onPress={() => navigation.navigate('الماسح')}
+        {/* Expected Balance & Debts Preview Modal */}
+        <Modal
+          visible={showBalanceModal}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShowBalanceModal(false)}
         >
-          <LinearGradient
-            colors={[COLORS.primary, COLORS.secondary]}
-            style={styles.fabGradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
+          <View style={styles.walletModalOverlay}>
+            <View style={[styles.walletModalContent, { maxHeight: '85%' }]}>
+              {/* Header */}
+              <View style={styles.walletModalHeader}>
+                <TouchableOpacity onPress={() => setShowBalanceModal(false)}>
+                  <Ionicons name="close" size={24} color={COLORS.white} />
+                </TouchableOpacity>
+                <Text style={styles.walletModalTitle}>معاينة الرصيد المتوقع</Text>
+                <View style={{ width: 24 }} />
+              </View>
+
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+                {/* Available Balance Editor Card */}
+                <View style={styles.adjustFormCard}>
+                  <Text style={styles.adjustLabel}>تعديل الرصيد المتوفر الحالي</Text>
+                  <View style={styles.adjustInputRow}>
+                    <Text style={styles.adjustCurrency}>{baseCurrency}</Text>
+                    <TextInput
+                      style={[styles.adjustTextInput, { flex: 1 }]}
+                      placeholder="0.00"
+                      placeholderTextColor="rgba(255,255,255,0.25)"
+                      value={inputBalance}
+                      onChangeText={(val) => {
+                        setInputBalance(val);
+                        const num = parseFloat(val) || 0;
+                        setAvailableBalance(num.toString());
+                        AsyncStorage.setItem('available_balance', num.toString());
+                      }}
+                      keyboardType="numeric"
+                      textAlign="right"
+                    />
+                  </View>
+                </View>
+
+                {/* Debts Summary Card */}
+                <View style={[styles.walletHeroCard, { borderLeftColor: COLORS.primary, marginTop: 12 }]}>
+                  <Text style={styles.walletHeroName}>ملخص الديون النشطة</Text>
+                  <View style={{ flexDirection: 'row-reverse', justifyContent: 'space-between', marginTop: 8 }}>
+                    <View style={{ alignItems: 'center' }}>
+                      <Text style={{ color: COLORS.textSecondary, fontSize: 11, marginBottom: 4 }}>ديون لي (سأحصلها) 🟢</Text>
+                      <Text style={{ color: '#4CAF50', fontSize: 15, fontWeight: '700' }}>
+                        {(dashboardData?.stats?.totalDebtReceivable || 0).toLocaleString('en-US')} {baseCurrency}
+                      </Text>
+                    </View>
+                    <View style={{ alignItems: 'center' }}>
+                      <Text style={{ color: COLORS.textSecondary, fontSize: 11, marginBottom: 4 }}>ديون علي (سأسدها) 🔴</Text>
+                      <Text style={{ color: '#F44336', fontSize: 15, fontWeight: '700' }}>
+                        {(dashboardData?.stats?.totalDebtPayable || 0).toLocaleString('en-US')} {baseCurrency}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Scenario Preview Grid */}
+                <Text style={styles.ledgerSectionTitle}>سيناريوهات الرصيد المتوقع</Text>
+                
+                {(() => {
+                  const current = parseFloat(availableBalance) || 0;
+                  const rec = dashboardData?.stats?.totalDebtReceivable || 0;
+                  const pay = dashboardData?.stats?.totalDebtPayable || 0;
+
+                  return (
+                    <View style={{ gap: 10, marginTop: 8 }}>
+                      {/* Case 1: After Collection Only */}
+                      <View style={styles.ledgerItemRow}>
+                        <Text style={[styles.ledgerItemAmount, { color: '#4CAF50' }]}>
+                          {(current + rec).toLocaleString('en-US', { minimumFractionDigits: 2 })} {baseCurrency}
+                        </Text>
+                        <View style={{ alignItems: 'flex-end' }}>
+                          <Text style={styles.ledgerItemDesc}>بعد تحصيل الديون التي لي فقط</Text>
+                          <Text style={styles.ledgerItemTag}>رصيد + الديون التي لي</Text>
+                        </View>
+                      </View>
+
+                      {/* Case 2: After Payment Only */}
+                      <View style={styles.ledgerItemRow}>
+                        <Text style={[styles.ledgerItemAmount, { color: '#F44336' }]}>
+                          {(current - pay).toLocaleString('en-US', { minimumFractionDigits: 2 })} {baseCurrency}
+                        </Text>
+                        <View style={{ alignItems: 'flex-end' }}>
+                          <Text style={styles.ledgerItemDesc}>بعد سداد الديون التي علي فقط</Text>
+                          <Text style={styles.ledgerItemTag}>رصيد - الديون التي علي</Text>
+                        </View>
+                      </View>
+
+                      {/* Case 3: Net Net Net */}
+                      <View style={[styles.ledgerItemRow, { backgroundColor: 'rgba(76, 201, 240, 0.06)', borderColor: COLORS.primary, borderWidth: 1 }]}>
+                        <Text style={[styles.ledgerItemAmount, { color: COLORS.primary, fontSize: 15 }]}>
+                          {(current + rec - pay).toLocaleString('en-US', { minimumFractionDigits: 2 })} {baseCurrency}
+                        </Text>
+                        <View style={{ alignItems: 'flex-end' }}>
+                          <Text style={[styles.ledgerItemDesc, { color: COLORS.primary, fontWeight: '700' }]}>الصافي النهائي (الحالتين معاً)</Text>
+                          <Text style={styles.ledgerItemTag}>رصيد + الديون التي لي - التي علي</Text>
+                        </View>
+                      </View>
+                    </View>
+                  );
+                })()}
+
+                {/* Active Debts List inside Modal */}
+                <Text style={styles.ledgerSectionTitle}>قائمة الديون النشطة وتصفيتها</Text>
+                {dashboardData?.activeDebts && dashboardData.activeDebts.length > 0 ? (
+                  <View style={[styles.ledgerWrapper, { marginTop: 8 }]}>
+                    {dashboardData.activeDebts.map((item) => {
+                      const isReceivable = item.debtType === 'receivable';
+                      return (
+                        <View key={item.id} style={styles.ledgerItemRow}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                            {settlingDebtId === item.id ? (
+                              <ActivityIndicator size="small" color={COLORS.primary} />
+                            ) : (
+                              <TouchableOpacity
+                                onPress={async () => {
+                                  setSettlingDebtId(item.id);
+                                  try {
+                                    await axios.put(`${apiUrl}/receipts/${item.id}`, {
+                                      ...item,
+                                      isSettled: true
+                                    });
+                                    await fetchDashboardData();
+                                  } catch (e) {
+                                    Alert.alert('خطأ', 'فشل تسوية الدين.');
+                                  } finally {
+                                    setSettlingDebtId(null);
+                                  }
+                                }}
+                                style={{
+                                  backgroundColor: 'rgba(76, 201, 240, 0.1)',
+                                  borderColor: COLORS.primary,
+                                  borderWidth: 1,
+                                  borderRadius: 8,
+                                  paddingHorizontal: 8,
+                                  paddingVertical: 4
+                                }}
+                              >
+                                <Text style={{ color: COLORS.primary, fontSize: 10, fontWeight: '700' }}>تسوية ✅</Text>
+                              </TouchableOpacity>
+                            )}
+                            <Text style={[styles.ledgerItemAmount, { color: isReceivable ? '#4CAF50' : '#F44336' }]}>
+                              {item.total.toFixed(2)} {item.currency}
+                            </Text>
+                          </View>
+                          <View style={{ alignItems: 'flex-end' }}>
+                            <Text style={styles.ledgerItemDesc}>{item.debtPerson}</Text>
+                            <Text style={styles.ledgerItemTag}>
+                              {isReceivable ? '🤝 دين لي على الشخص' : '💸 دين علي للشخص'}
+                            </Text>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ) : (
+                  <Text style={[styles.noLedgerText, { marginTop: 12 }]}>لا توجد ديون نشطة حالياً.</Text>
+                )}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Dual FAB buttons Container */}
+        <View style={styles.fabContainer}>
+          {/* Add Debt Screen Button */}
+          <TouchableOpacity
+            style={[styles.miniFab, { backgroundColor: '#7209B7' }]}
+            onPress={() => navigation.navigate('AddDebt')}
           >
-            <Ionicons name="qr-code" size={26} color={COLORS.white} />
-          </LinearGradient>
-        </TouchableOpacity>
+            <Ionicons name="people" size={20} color={COLORS.white} />
+          </TouchableOpacity>
+
+          {/* Floating Scanner Action Button */}
+          <TouchableOpacity
+            style={styles.fab}
+            onPress={() => navigation.navigate('الماسح')}
+          >
+            <LinearGradient
+              colors={[COLORS.primary, COLORS.secondary]}
+              style={styles.fabGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <Ionicons name="qr-code" size={26} color={COLORS.white} />
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
 
       </LinearGradient>
     </View>
@@ -2059,6 +2237,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
+  },
+  fabContainer: {
+    position: 'absolute',
+    bottom: 110,
+    left: 24,
+    alignItems: 'center',
+    gap: 12,
+    zIndex: 99,
+  },
+  miniFab: {
+    width: 46,
+    height: 46,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
   },
 });
 

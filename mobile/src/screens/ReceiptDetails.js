@@ -179,98 +179,158 @@ const ReceiptDetails = ({ route, navigation }) => {
             </View>
           ) : null}
 
-          {/* Purchased Items List */}
-          <View style={styles.itemsCard}>
-            <Text style={styles.sectionHeading}>العناصر والمشتريات ({receipt.items.length})</Text>
-            
-            {receipt.items.map((item, idx) => (
-              <View key={item.id || idx} style={styles.itemRow}>
-                <View style={styles.itemPriceCol}>
-                  <Text style={styles.itemTotalText}>
-                    {item.total.toFixed(2)} {receipt.currency}
-                  </Text>
-                  <Text style={styles.itemUnitPriceText}>
-                    {item.quantity} × {item.price.toFixed(2)} {receipt.currency}
-                  </Text>
-                </View>
-                <View style={styles.itemInfoCol}>
-                  <Text style={styles.itemNameText}>{item.product?.name || item.originalName}</Text>
-                  {item.originalName && item.originalName !== item.product?.name ? (
-                    <Text style={styles.itemScannedText}>النص الممسوح: {item.originalName}</Text>
-                  ) : null}
-                  {item.discount > 0 ? (
-                    <Text style={styles.itemDiscountText}>خصم: -{item.discount.toFixed(2)} {receipt.currency}</Text>
-                  ) : null}
-                  {/* Split Summary under item */}
-                  {item.splits && item.splits.length > 1 && (
-                    <View style={styles.itemSplitBadges}>
-                      {item.splits.map((s, si) => (
-                        <View key={si} style={[
-                          styles.splitBadge,
-                          s.isUser
-                            ? { backgroundColor: 'rgba(76,201,240,0.12)', borderColor: 'rgba(76,201,240,0.3)' }
-                            : { backgroundColor: (s.person?.color || '#999') + '20', borderColor: (s.person?.color || '#999') + '50' }
-                        ]}>
-                          <Text style={[styles.splitBadgeText, { color: s.isUser ? COLORS.primary : (s.person?.color || '#999') }]}>
-                            {s.personName}: {s.amount.toFixed(2)}
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
-                  )}
-                </View>
+          {/* Debt Details Card (If receipt is a debt) */}
+          {receipt.isDebt ? (
+            <View style={[styles.splitOverviewCard, { backgroundColor: 'rgba(76,201,240,0.06)', borderColor: COLORS.primary }]}>
+              <View style={styles.splitOverviewHeader}>
+                <Ionicons name="people" size={18} color={COLORS.primary} />
+                <Text style={styles.splitOverviewTitle}>تفاصيل الدين المالي 🤝</Text>
               </View>
-            ))}
+              
+              <View style={styles.debtRow}>
+                <Text style={[styles.debtAmount, { color: COLORS.text }]}>
+                  {receipt.debtPerson}
+                </Text>
+                <Text style={styles.debtName}>اسم الشخص</Text>
+              </View>
 
-            {/* Price Tally Footer */}
-            <View style={styles.tallyContainer}>
-              {receipt.tax > 0 ? (
-                <View style={styles.tallyRow}>
-                  <Text style={styles.tallyVal}>{receipt.tax.toFixed(2)} {receipt.currency}</Text>
-                  <Text style={styles.tallyLabel}>الضريبة المضافة (VAT)</Text>
-                </View>
-              ) : null}
-              {receipt.discount > 0 ? (
-                <View style={styles.tallyRow}>
-                  <Text style={[styles.tallyVal, { color: COLORS.primary }]}>-{receipt.discount.toFixed(2)} {receipt.currency}</Text>
-                  <Text style={styles.tallyLabel}>الخصم الكلي</Text>
-                </View>
-              ) : null}
-              <View style={[styles.tallyRow, styles.grandTallyRow]}>
-                <Text style={styles.grandTallyVal}>{receipt.total.toFixed(2)} {receipt.currency}</Text>
-                <Text style={styles.grandTallyLabel}>الصافي المدفوع</Text>
+              <View style={styles.debtRow}>
+                <Text style={[styles.debtAmount, { color: receipt.debtType === 'receivable' ? '#4CAF50' : '#F44336' }]}>
+                  {receipt.debtType === 'receivable' ? 'لي (أطلب الشخص)' : 'علي (الشخص يطلبني)'}
+                </Text>
+                <Text style={styles.debtName}>نوع الدين</Text>
               </View>
+
+              <View style={styles.debtRow}>
+                <Text style={[styles.debtAmount, { color: receipt.isSettled ? COLORS.textSecondary : COLORS.primary }]}>
+                  {receipt.isSettled ? 'تم السداد والتسوية ✅' : 'نشط وغير مسدد ⏳'}
+                </Text>
+                <Text style={styles.debtName}>حالة الدين</Text>
+              </View>
+
+              {/* Settlement Action Button */}
+              <TouchableOpacity
+                onPress={async () => {
+                  try {
+                    await axios.put(`${apiUrl}/receipts/${receipt.id}`, {
+                      ...receipt,
+                      isSettled: !receipt.isSettled
+                    });
+                    await fetchDashboardData();
+                    fetchDetails();
+                  } catch (e) {
+                    alert('فشل تحديث حالة الدين.');
+                  }
+                }}
+                style={{
+                  backgroundColor: COLORS.primary,
+                  borderRadius: 14,
+                  paddingVertical: 12,
+                  alignItems: 'center',
+                  marginTop: 12
+                }}
+              >
+                <Text style={{ color: COLORS.background, fontSize: 13, fontWeight: '700' }}>
+                  {receipt.isSettled ? 'إعادة تنشيط الدين 🔄' : 'تغيير حالة الدين لـ تم السداد ✅'}
+                </Text>
+              </TouchableOpacity>
             </View>
-          </View>
-
-          {/* Split Overview Card */}
-          {(() => {
-            const allSplits = receipt.items.flatMap(item => item.splits || []);
-            const personDebts = {};
-            allSplits.filter(s => !s.isUser).forEach(s => {
-              const key = s.personName;
-              if (!personDebts[key]) personDebts[key] = { name: key, amount: 0, color: s.person?.color || '#4CC9F0' };
-              personDebts[key].amount += s.amount;
-            });
-            const debtList = Object.values(personDebts);
-            if (debtList.length === 0) return null;
-            return (
-              <View style={styles.splitOverviewCard}>
-                <View style={styles.splitOverviewHeader}>
-                  <Ionicons name="people" size={18} color={COLORS.primary} />
-                  <Text style={styles.splitOverviewTitle}>ملخص تقسيم الفاتورة</Text>
-                </View>
-                {debtList.map((debt, i) => (
-                  <View key={i} style={styles.debtRow}>
-                    <Text style={[styles.debtAmount, { color: debt.color }]}>
-                      {debt.amount.toFixed(2)} {receipt.currency}
-                    </Text>
-                    <Text style={styles.debtName}>{debt.name} مدين بـ</Text>
+          ) : (
+            <>
+              {/* Purchased Items List */}
+              <View style={styles.itemsCard}>
+                <Text style={styles.sectionHeading}>العناصر والمشتريات ({receipt.items.length})</Text>
+                
+                {receipt.items.map((item, idx) => (
+                  <View key={item.id || idx} style={styles.itemRow}>
+                    <View style={styles.itemPriceCol}>
+                      <Text style={styles.itemTotalText}>
+                        {item.total.toFixed(2)} {receipt.currency}
+                      </Text>
+                      <Text style={styles.itemUnitPriceText}>
+                        {item.quantity} × {item.price.toFixed(2)} {receipt.currency}
+                      </Text>
+                    </View>
+                    <View style={styles.itemInfoCol}>
+                      <Text style={styles.itemNameText}>{item.product?.name || item.originalName}</Text>
+                      {item.originalName && item.originalName !== item.product?.name ? (
+                        <Text style={styles.itemScannedText}>النص الممسوح: {item.originalName}</Text>
+                      ) : null}
+                      {item.discount > 0 ? (
+                        <Text style={styles.itemDiscountText}>خصم: -{item.discount.toFixed(2)} {receipt.currency}</Text>
+                      ) : null}
+                      {/* Split Summary under item */}
+                      {item.splits && item.splits.length > 1 && (
+                        <View style={styles.itemSplitBadges}>
+                          {item.splits.map((s, si) => (
+                            <View key={si} style={[
+                              styles.splitBadge,
+                              s.isUser
+                                ? { backgroundColor: 'rgba(76,201,240,0.12)', borderColor: 'rgba(76,201,240,0.3)' }
+                                : { backgroundColor: (s.person?.color || '#999') + '20', borderColor: (s.person?.color || '#999') + '50' }
+                            ]}>
+                              <Text style={[styles.splitBadgeText, { color: s.isUser ? COLORS.primary : (s.person?.color || '#999') }]}>
+                                {s.personName}: {s.amount.toFixed(2)}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </View>
                   </View>
                 ))}
+
+                {/* Price Tally Footer */}
+                <View style={styles.tallyContainer}>
+                  {receipt.tax > 0 ? (
+                    <View style={styles.tallyRow}>
+                      <Text style={styles.tallyVal}>{receipt.tax.toFixed(2)} {receipt.currency}</Text>
+                      <Text style={styles.tallyLabel}>الضريبة المضافة (VAT)</Text>
+                    </View>
+                  ) : null}
+                  {receipt.discount > 0 ? (
+                    <View style={styles.tallyRow}>
+                      <Text style={[styles.tallyVal, { color: COLORS.primary }]}>-{receipt.discount.toFixed(2)} {receipt.currency}</Text>
+                      <Text style={styles.tallyLabel}>الخصم الكلي</Text>
+                    </View>
+                  ) : null}
+                  <View style={[styles.tallyRow, styles.grandTallyRow]}>
+                    <Text style={styles.grandTallyVal}>{receipt.total.toFixed(2)} {receipt.currency}</Text>
+                    <Text style={styles.grandTallyLabel}>الصافي المدفوع</Text>
+                  </View>
+                </View>
               </View>
-            );
-          })()}
+
+              {/* Split Overview Card */}
+              {(() => {
+                const allSplits = receipt.items.flatMap(item => item.splits || []);
+                const personDebts = {};
+                allSplits.filter(s => !s.isUser).forEach(s => {
+                  const key = s.personName;
+                  if (!personDebts[key]) personDebts[key] = { name: key, amount: 0, color: s.person?.color || '#4CC9F0' };
+                  personDebts[key].amount += s.amount;
+                });
+                const debtList = Object.values(personDebts);
+                if (debtList.length === 0) return null;
+                return (
+                  <View style={styles.splitOverviewCard}>
+                    <View style={styles.splitOverviewHeader}>
+                      <Ionicons name="people" size={18} color={COLORS.primary} />
+                      <Text style={styles.splitOverviewTitle}>ملخص تقسيم الفاتورة</Text>
+                    </View>
+                    {debtList.map((debt, i) => (
+                      <View key={i} style={styles.debtRow}>
+                        <Text style={[styles.debtAmount, { color: debt.color }]}>
+                          {debt.amount.toFixed(2)} {receipt.currency}
+                        </Text>
+                        <Text style={styles.debtName}>{debt.name} مدين بـ</Text>
+                      </View>
+                    ))}
+                  </View>
+                );
+              })()}
+            </>
+          )}
 
           <View style={{ height: 40 }} />
         </ScrollView>

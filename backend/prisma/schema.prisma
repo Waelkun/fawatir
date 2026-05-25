@@ -75,6 +75,10 @@ model Receipt {
   payerName             String?          // Retained for backward compatibility
   items                 ReceiptItem[]
   settlements           DebtSettlement[]
+  isDebt                Boolean          @default(false)
+  debtType              String?          // receivable (لي), payable (علي)
+  debtPerson            String?          // اسم الشخص المدين أو الدائن
+  isSettled             Boolean          @default(false)
   createdAt             DateTime         @default(now())
 }
 

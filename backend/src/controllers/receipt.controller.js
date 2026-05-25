@@ -231,7 +231,8 @@ const updateReceipt = async (req, res) => {
   const userId = req.userId;
   const { 
     storeName, date, total, currency, tax, discount, items, 
-    payerType, payerPersonId, walletId, secondaryWalletId, secondaryWalletAmount, payerName 
+    payerType, payerPersonId, walletId, secondaryWalletId, secondaryWalletAmount, payerName,
+    isDebt, debtType, debtPerson, isSettled
   } = req.body;
 
   try {
@@ -306,7 +307,11 @@ const updateReceipt = async (req, res) => {
         walletId: walletId ? parseInt(walletId) : null,
         secondaryWalletId: secWalletId,
         secondaryWalletAmount: secondaryWalletAmountInCents,
-        payerName: payerName || null
+        payerName: payerName || null,
+        isDebt: isDebt !== undefined ? !!isDebt : false,
+        debtType: debtType || null,
+        debtPerson: debtPerson || null,
+        isSettled: isSettled !== undefined ? !!isSettled : false
       }
     });
 
@@ -580,21 +585,35 @@ const deleteReceipt = async (req, res) => {
  */
 const createManualReceipt = async (req, res) => {
   const userId = req.userId;
+  const { isDebt, debtType, debtPerson, isSettled, total, currency, storeName, date, notes } = req.body;
+
   try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { baseCurrency: true }
+    });
+    const defaultCurrency = user?.baseCurrency || 'SAR';
+
     const defaultWallet = await prisma.wallet.findFirst({ where: { userId } });
+    const totalInCents = total ? Math.round(parseFloat(total) * 100) : 0;
+
     const receipt = await prisma.receipt.create({
       data: {
         userId,
-        storeName: 'فاتورة يدوية جديدة',
-        date: new Date(),
-        total: 0,
-        currency: 'SAR',
+        storeName: storeName || (isDebt ? `دين لـ ${debtPerson || 'مجهول'}` : 'فاتورة يدوية جديدة'),
+        date: date ? new Date(date) : new Date(),
+        total: totalInCents,
+        currency: currency || defaultCurrency,
         tax: 0,
         discount: 0,
         confidence: 1.0,
-        status: 'NEEDS_REVIEW',
+        status: isDebt ? 'APPROVED' : 'NEEDS_REVIEW',
         payerType: 'USER',
         walletId: defaultWallet ? defaultWallet.id : null,
+        isDebt: isDebt !== undefined ? !!isDebt : false,
+        debtType: debtType || null,
+        debtPerson: debtPerson || null,
+        isSettled: isSettled !== undefined ? !!isSettled : false
       },
       include: {
         items: {
@@ -606,12 +625,12 @@ const createManualReceipt = async (req, res) => {
     });
 
     res.status(201).json({
-      message: 'تم إنشاء مسودة فاتورة يدوية.',
+      message: isDebt ? 'تم تسجيل الدين بنجاح.' : 'تم إنشاء مسودة فاتورة يدوية.',
       receipt: formatReceiptFromDb(receipt)
     });
   } catch (error) {
     console.error('Error creating manual receipt:', error);
-    res.status(500).json({ error: 'حدث خطأ أثناء إنشاء الفاتورة اليدوية.' });
+    res.status(500).json({ error: 'حدث خطأ أثناء إنشاء الفاتورة أو الدين.' });
   }
 };
 

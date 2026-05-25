@@ -21,6 +21,7 @@ import Logs from '../screens/Insights';
 import Settings from '../screens/Settings';
 import PeopleScreen from '../screens/PeopleScreen';
 import PersonDetails from '../screens/PersonDetails';
+import AddDebtScreen from '../screens/AddDebtScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -92,6 +93,7 @@ export const AppNavigator = () => {
             <Stack.Screen name="ReceiptDetails" component={ReceiptDetails} />
             <Stack.Screen name="SingleProductDetails" component={ProductDetails} />
             <Stack.Screen name="PersonDetails" component={PersonDetails} />
+            <Stack.Screen name="AddDebt" component={AddDebtScreen} />
           </>
         )}
       </Stack.Navigator>

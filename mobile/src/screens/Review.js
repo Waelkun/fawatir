@@ -7,6 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { AppContext } from '../context/AppContext';
 import { COLORS } from '../theme/colors';
 import { Ionicons } from '@expo/vector-icons';
+import CurrencySelector from './CurrencySelector';
 import axios from 'axios';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -57,6 +58,9 @@ const Review = ({ route, navigation }) => {
   // Who Paid Modal
   const [showPayerModal, setShowPayerModal] = useState(false);
 
+  // Currency Selection Modal
+  const [showCurrencySelector, setShowCurrencySelector] = useState(false);
+
   // Split Modal
   const [showSplitModal, setShowSplitModal] = useState(false);
   const [splitItemIndex, setSplitItemIndex] = useState(null);
@@ -67,6 +71,13 @@ const Review = ({ route, navigation }) => {
     fetchProducts();
     fetchPeople();
     fetchWallets();
+
+    // Set default currency from user settings if receipt doesn't have a currency
+    if (!receipt.currency && user?.baseCurrency) {
+      setCurrency(user.baseCurrency);
+    } else {
+      setCurrency(receipt.currency || user?.baseCurrency || 'SAR');
+    }
 
     // Default walletId if not set and wallets exist
     if (!receipt.walletId && wallets && wallets.length > 0) {
@@ -97,7 +108,7 @@ const Review = ({ route, navigation }) => {
         splits: item.splits || []
       })));
     }
-  }, [receipt]);
+  }, [receipt, user]);
 
   // Auto-calculate receipt total
   useEffect(() => {
@@ -522,14 +533,19 @@ const Review = ({ route, navigation }) => {
             <View style={styles.rowFields}>
               <View style={[styles.fieldRow, { flex: 1 }]}>
                 <Text style={styles.label}>العملة</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={currency}
-                  onChangeText={setCurrency}
-                  placeholder="SAR"
-                  placeholderTextColor="rgba(255,255,255,0.2)"
-                  autoCapitalize="characters"
-                />
+                <TouchableOpacity
+                  onPress={() => setShowCurrencySelector(true)}
+                  style={{
+                    height: 40,
+                    borderBottomWidth: 1,
+                    borderBottomColor: 'rgba(255,255,255,0.05)',
+                    justifyContent: 'center',
+                    alignItems: 'flex-end',
+                    paddingRight: 4
+                  }}
+                >
+                  <Text style={{ color: COLORS.text, fontSize: 14, fontWeight: '600' }}>{currency}</Text>
+                </TouchableOpacity>
               </View>
               <View style={[styles.fieldRow, styles.suspiciousField, { flex: 2 }]}>
                 <Text style={styles.label}>الإجمالي الكلي</Text>
@@ -679,6 +695,14 @@ const Review = ({ route, navigation }) => {
 
           <View style={{ height: 60 }} />
         </ScrollView>
+
+        {/* Currency Selector Modal */}
+        <CurrencySelector
+          visible={showCurrencySelector}
+          onClose={() => setShowCurrencySelector(false)}
+          currentCurrency={currency}
+          onSelect={(code) => setCurrency(code)}
+        />
 
         {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         {/* WHO PAID Modal */}
