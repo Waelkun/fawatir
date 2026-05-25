@@ -6,9 +6,9 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "build": "node scripts/prepare-postgres.js && npx prisma generate && npx prisma db push --accept-data-loss",
-    "prisma:generate": "npx prisma generate",
-    "prisma:migrate": "npx prisma migrate dev",
+    "build": "node scripts/prepare-postgres.js && npx prisma@5.22.0 generate && npx prisma@5.22.0 db push --accept-data-loss",
+    "prisma:generate": "npx prisma@5.22.0 generate",
+    "prisma:migrate": "npx prisma@5.22.0 migrate dev",
     "prisma:seed": "node prisma/seed.js",
     "db:setup": "node scripts/setup-db.js"
   },
