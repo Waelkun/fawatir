@@ -11,11 +11,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const { width } = Dimensions.get('window');
 
 const Dashboard = ({ navigation }) => {
-  const { 
-    user, 
-    apiUrl, 
-    dashboardData, 
-    fetchDashboardData, 
+  const {
+    user,
+    apiUrl,
+    dashboardData,
+    fetchDashboardData,
     logout,
     monthlyBudget,
     wallets,
@@ -27,7 +27,7 @@ const Dashboard = ({ navigation }) => {
     people,
     fetchPeople
   } = useContext(AppContext);
-  
+
   const [refreshing, setRefreshing] = useState(false);
   const [trends, setTrends] = useState([]);
   const [loadingTrends, setLoadingTrends] = useState(true);
@@ -49,7 +49,7 @@ const Dashboard = ({ navigation }) => {
   const [walletTotalIn, setWalletTotalIn] = useState(0);
   const [walletTotalOut, setWalletTotalOut] = useState(0);
   const [loadingLedger, setLoadingLedger] = useState(false);
-  
+
   // Wallet Adjust Form State
   const [showAdjustForm, setShowAdjustForm] = useState(false);
   const [adjustType, setAdjustType] = useState('DEPOSIT'); // 'DEPOSIT' | 'WITHDRAW'
@@ -108,7 +108,7 @@ const Dashboard = ({ navigation }) => {
       } else {
         url += `&days=7`;
       }
-      
+
       const res = await axios.get(url);
       setTrends(res.data.chartData);
     } catch (e) {
@@ -134,7 +134,7 @@ const Dashboard = ({ navigation }) => {
     const month = date.getMonth();
     const firstDay = new Date(year, month, 1).getDay();
     const daysCount = new Date(year, month + 1, 0).getDate();
-    
+
     const days = [];
     for (let i = 0; i < firstDay; i++) {
       days.push({ day: null, date: null });
@@ -357,33 +357,33 @@ const Dashboard = ({ navigation }) => {
         <View style={styles.chartHeader}>
           <Text style={styles.chartTitle}>
             {chartFilter === 'week' ? 'تحليل الإنفاق الأسبوعي' :
-             chartFilter === 'month' ? 'تحليل الإنفاق الشهري' :
-             `تحليل الفترة (${formatShortDate(startDateRange)} - ${formatShortDate(endDateRange)})`
+              chartFilter === 'month' ? 'تحليل الإنفاق الشهري' :
+                `تحليل الفترة (${formatShortDate(startDateRange)} - ${formatShortDate(endDateRange)})`
             }
           </Text>
           <Text style={styles.chartCurrency}>({dashboardData?.baseCurrency || 'SAR'})</Text>
         </View>
-        
+
         <View style={{ height: chartHeight, width: chartWidth }}>
           <Svg height={chartHeight} width={chartWidth}>
             {/* Grid Line at Zero baseline */}
-            <Line 
-              x1={paddingLeft} 
-              y1={yZero} 
-              x2={chartWidth} 
-              y2={yZero} 
-              stroke="rgba(255,255,255,0.12)" 
-              strokeWidth="1" 
+            <Line
+              x1={paddingLeft}
+              y1={yZero}
+              x2={chartWidth}
+              y2={yZero}
+              stroke="rgba(255,255,255,0.12)"
+              strokeWidth="1"
             />
 
             {/* Grid Line at Max value */}
-            <Line 
-              x1={paddingLeft} 
-              y1={getY(maxRaw)} 
-              x2={chartWidth} 
-              y2={getY(maxRaw)} 
-              stroke="rgba(255,255,255,0.03)" 
-              strokeWidth="1" 
+            <Line
+              x1={paddingLeft}
+              y1={getY(maxRaw)}
+              x2={chartWidth}
+              y2={getY(maxRaw)}
+              stroke="rgba(255,255,255,0.03)"
+              strokeWidth="1"
               strokeDasharray="4,4"
             />
 
@@ -414,10 +414,10 @@ const Dashboard = ({ navigation }) => {
             {trends.map((item, idx) => {
               const xGroup = paddingLeft + (idx * colSpacing);
               const xCenter = xGroup + (colSpacing / 2);
-              
+
               const barWidth = Math.max(3, Math.min(14, (plotWidth / trends.length) - 4));
               const xBar = xCenter - (barWidth / 2);
-              
+
               const yExpense = getY(item.amount);
               const hExpense = yZero - yExpense;
 
@@ -538,7 +538,7 @@ const Dashboard = ({ navigation }) => {
 
   filteredTxs.forEach(t => {
     let txAmt = t.amount;
-    
+
     if (ledgerPersonFilter !== 'all' && ledgerPersonFilter !== 'user') {
       const targetPersonId = ledgerPersonFilter;
       if (t.type === 'RECEIPT') {
@@ -593,7 +593,7 @@ const Dashboard = ({ navigation }) => {
           </View>
 
           {/* Balance / Budget Glass Card */}
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.balanceCard}
             onPress={() => setShowBalanceModal(true)}
           >
@@ -602,7 +602,7 @@ const Dashboard = ({ navigation }) => {
               style={styles.balanceCardGrad}
             >
               <View style={{ flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <Text style={styles.balanceLabel}>إجمالي الرصيد المتوفر (اضغط للمعاينة 📊)</Text>
+                <Text style={styles.balanceLabel}>إجمالي الرصيد المتوفر 📊</Text>
               </View>
               <Text style={styles.balanceVal}>
                 {(stats.totalBalance || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -641,8 +641,8 @@ const Dashboard = ({ navigation }) => {
               </View>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingVertical: 8 }}>
                 {wallets.map(w => (
-                  <TouchableOpacity 
-                    key={w.id} 
+                  <TouchableOpacity
+                    key={w.id}
                     style={[styles.walletMiniCard, { borderLeftColor: w.color }]}
                     onPress={() => handleOpenWalletModal(w)}
                   >
@@ -693,14 +693,14 @@ const Dashboard = ({ navigation }) => {
 
           {/* Spending Mode Selector */}
           <View style={styles.modeSelector}>
-            <TouchableOpacity 
-              style={[styles.modeBtn, spendingMode === 'personal' && styles.modeBtnActive]} 
+            <TouchableOpacity
+              style={[styles.modeBtn, spendingMode === 'personal' && styles.modeBtnActive]}
               onPress={() => setSpendingMode('personal')}
             >
               <Text style={[styles.modeBtnText, spendingMode === 'personal' && styles.modeBtnTextActive]}>تحليل حصتي فقط</Text>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.modeBtn, spendingMode === 'shared' && styles.modeBtnActive]} 
+            <TouchableOpacity
+              style={[styles.modeBtn, spendingMode === 'shared' && styles.modeBtnActive]}
               onPress={() => setSpendingMode('shared')}
             >
               <Text style={[styles.modeBtnText, spendingMode === 'shared' && styles.modeBtnTextActive]}>تحليل الكل مشترك</Text>
@@ -709,19 +709,19 @@ const Dashboard = ({ navigation }) => {
 
           {/* Chart Filter Selector */}
           <View style={styles.filterWrapper}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.filterBtn, chartFilter === 'week' ? styles.activeFilterBtn : null]}
               onPress={() => setChartFilter('week')}
             >
               <Text style={[styles.filterBtnText, chartFilter === 'week' ? styles.activeFilterBtnText : null]}>أسبوع</Text>
             </TouchableOpacity>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.filterBtn, chartFilter === 'month' ? styles.activeFilterBtn : null]}
               onPress={() => setChartFilter('month')}
             >
               <Text style={[styles.filterBtnText, chartFilter === 'month' ? styles.activeFilterBtnText : null]}>شهر</Text>
             </TouchableOpacity>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.filterBtn, chartFilter === 'custom' ? styles.activeFilterBtn : null]}
               onPress={() => {
                 setShowCalendarModal(true);
@@ -729,8 +729,8 @@ const Dashboard = ({ navigation }) => {
             >
               <Ionicons name="calendar-outline" size={14} color={chartFilter === 'custom' ? COLORS.background : COLORS.textSecondary} style={{ marginLeft: 4 }} />
               <Text style={[styles.filterBtnText, chartFilter === 'custom' ? styles.activeFilterBtnText : null]}>
-                {chartFilter === 'custom' && startDateRange && endDateRange 
-                  ? `${formatShortDate(startDateRange)} - ${formatShortDate(endDateRange)}` 
+                {chartFilter === 'custom' && startDateRange && endDateRange
+                  ? `${formatShortDate(startDateRange)} - ${formatShortDate(endDateRange)}`
                   : 'مخصص'
                 }
               </Text>
@@ -792,7 +792,7 @@ const Dashboard = ({ navigation }) => {
                       (tempStartDate && item.date.toDateString() === tempStartDate.toDateString()) ||
                       (tempEndDate && item.date.toDateString() === tempEndDate.toDateString())
                     );
-                    
+
                     const isInRange = item.date && tempStartDate && tempEndDate && (
                       item.date > tempStartDate && item.date < tempEndDate
                     );
@@ -832,7 +832,7 @@ const Dashboard = ({ navigation }) => {
                 </View>
 
                 {/* Apply button */}
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.applyRangeBtn}
                   onPress={handleApplyCustomRange}
                 >
@@ -871,17 +871,17 @@ const Dashboard = ({ navigation }) => {
                           <Ionicons name="arrow-back-outline" size={20} color={COLORS.primary} />
                         </TouchableOpacity>
                       </View>
-                      
+
                       {/* Edit Type */}
                       <Text style={styles.adjustLabel}>نوع العملية</Text>
                       <View style={styles.adjustTypeRow}>
-                        <TouchableOpacity 
+                        <TouchableOpacity
                           style={[styles.adjustTypeBtn, editTxType === 'WITHDRAW' && styles.adjustTypeBtnActiveWithdraw]}
                           onPress={() => setEditTxType('WITHDRAW')}
                         >
                           <Text style={[styles.adjustTypeBtnText, editTxType === 'WITHDRAW' && styles.adjustTypeBtnTextActive]}>سحب / مصاريف (-)</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity 
+                        <TouchableOpacity
                           style={[styles.adjustTypeBtn, editTxType === 'DEPOSIT' && styles.adjustTypeBtnActiveDeposit]}
                           onPress={() => setEditTxType('DEPOSIT')}
                         >
@@ -918,8 +918,8 @@ const Dashboard = ({ navigation }) => {
                       </View>
 
                       {/* Save Button */}
-                      <TouchableOpacity 
-                        style={styles.adjustConfirmBtn} 
+                      <TouchableOpacity
+                        style={styles.adjustConfirmBtn}
                         onPress={handleSaveEditTx}
                         disabled={savingEditTx}
                       >
@@ -959,8 +959,8 @@ const Dashboard = ({ navigation }) => {
                       </View>
 
                       {/* Toggle Adjustment Form Button */}
-                      <TouchableOpacity 
-                        style={styles.toggleAdjustBtn} 
+                      <TouchableOpacity
+                        style={styles.toggleAdjustBtn}
                         onPress={() => setShowAdjustForm(!showAdjustForm)}
                       >
                         <LinearGradient colors={['#7209B7', '#3A0CA3']} style={styles.toggleAdjustBtnGrad}>
@@ -973,17 +973,17 @@ const Dashboard = ({ navigation }) => {
                       {showAdjustForm && (
                         <View style={styles.adjustFormCard}>
                           <Text style={styles.adjustFormTitle}>تسجيل حركة رصيد مخصصة</Text>
-                          
+
                           {/* Adjust Type */}
                           <Text style={styles.adjustLabel}>نوع العملية</Text>
                           <View style={styles.adjustTypeRow}>
-                            <TouchableOpacity 
+                            <TouchableOpacity
                               style={[styles.adjustTypeBtn, adjustType === 'WITHDRAW' && styles.adjustTypeBtnActiveWithdraw]}
                               onPress={() => setAdjustType('WITHDRAW')}
                             >
                               <Text style={[styles.adjustTypeBtnText, adjustType === 'WITHDRAW' && styles.adjustTypeBtnTextActive]}>سحب / مصاريف (-)</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity 
+                            <TouchableOpacity
                               style={[styles.adjustTypeBtn, adjustType === 'DEPOSIT' && styles.adjustTypeBtnActiveDeposit]}
                               onPress={() => setAdjustType('DEPOSIT')}
                             >
@@ -1020,8 +1020,8 @@ const Dashboard = ({ navigation }) => {
                           </View>
 
                           {/* Confirm Button */}
-                          <TouchableOpacity 
-                            style={styles.adjustConfirmBtn} 
+                          <TouchableOpacity
+                            style={styles.adjustConfirmBtn}
                             onPress={handleWalletAdjust}
                             disabled={adjustingWallet}
                           >
@@ -1103,10 +1103,10 @@ const Dashboard = ({ navigation }) => {
                     onPress={() => navigation.navigate('ReceiptDetails', { id: receipt.id })}
                   >
                     <View style={styles.txIconContainer}>
-                      <Ionicons 
-                        name={receipt.isDebt ? 'people' : (receipt.status === 'NEEDS_REVIEW' ? 'alert-circle' : 'checkmark-circle')} 
-                        size={22} 
-                        color={receipt.isDebt ? (receipt.debtType === 'receivable' ? '#4CAF50' : '#F44336') : (receipt.status === 'NEEDS_REVIEW' ? COLORS.warning : COLORS.success)} 
+                      <Ionicons
+                        name={receipt.isDebt ? 'people' : (receipt.status === 'NEEDS_REVIEW' ? 'alert-circle' : 'checkmark-circle')}
+                        size={22}
+                        color={receipt.isDebt ? (receipt.debtType === 'receivable' ? '#4CAF50' : '#F44336') : (receipt.status === 'NEEDS_REVIEW' ? COLORS.warning : COLORS.success)}
                       />
                     </View>
                     <View style={styles.txInfo}>
@@ -1166,42 +1166,20 @@ const Dashboard = ({ navigation }) => {
               </View>
 
               <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
-                {/* Available Balance Editor Card */}
-                <View style={styles.adjustFormCard}>
-                  <Text style={styles.adjustLabel}>تعديل الرصيد المتوفر الحالي</Text>
-                  <View style={styles.adjustInputRow}>
-                    <Text style={styles.adjustCurrency}>{baseCurrency}</Text>
-                    <TextInput
-                      style={[styles.adjustTextInput, { flex: 1 }]}
-                      placeholder="0.00"
-                      placeholderTextColor="rgba(255,255,255,0.25)"
-                      value={inputBalance}
-                      onChangeText={(val) => {
-                        setInputBalance(val);
-                        const num = parseFloat(val) || 0;
-                        setAvailableBalance(num.toString());
-                        AsyncStorage.setItem('available_balance', num.toString());
-                      }}
-                      keyboardType="numeric"
-                      textAlign="right"
-                    />
-                  </View>
-                </View>
-
                 {/* Debts Summary Card */}
                 <View style={[styles.walletHeroCard, { borderLeftColor: COLORS.primary, marginTop: 12 }]}>
                   <Text style={styles.walletHeroName}>ملخص الديون النشطة</Text>
                   <View style={{ flexDirection: 'row-reverse', justifyContent: 'space-between', marginTop: 8 }}>
                     <View style={{ alignItems: 'center' }}>
-                      <Text style={{ color: COLORS.textSecondary, fontSize: 11, marginBottom: 4 }}>ديون لي (سأحصلها) 🟢</Text>
+                      <Text style={{ color: COLORS.textSecondary, fontSize: 11, marginBottom: 4 }}>أموال مستحقة لي 🟢</Text>
                       <Text style={{ color: '#4CAF50', fontSize: 15, fontWeight: '700' }}>
-                        {(dashboardData?.stats?.totalDebtReceivable || 0).toLocaleString('en-US')} {baseCurrency}
+                        {(dashboardData?.stats?.pendingReceivables || 0).toLocaleString('en-US', { maximumFractionDigits: 1 })} {baseCurrency}
                       </Text>
                     </View>
                     <View style={{ alignItems: 'center' }}>
-                      <Text style={{ color: COLORS.textSecondary, fontSize: 11, marginBottom: 4 }}>ديون علي (سأسدها) 🔴</Text>
+                      <Text style={{ color: COLORS.textSecondary, fontSize: 11, marginBottom: 4 }}>ديون مستحقة علي 🔴</Text>
                       <Text style={{ color: '#F44336', fontSize: 15, fontWeight: '700' }}>
-                        {(dashboardData?.stats?.totalDebtPayable || 0).toLocaleString('en-US')} {baseCurrency}
+                        {(dashboardData?.stats?.pendingPayables || 0).toLocaleString('en-US', { maximumFractionDigits: 1 })} {baseCurrency}
                       </Text>
                     </View>
                   </View>
@@ -1209,11 +1187,11 @@ const Dashboard = ({ navigation }) => {
 
                 {/* Scenario Preview Grid */}
                 <Text style={styles.ledgerSectionTitle}>سيناريوهات الرصيد المتوقع</Text>
-                
+
                 {(() => {
-                  const current = parseFloat(availableBalance) || 0;
-                  const rec = dashboardData?.stats?.totalDebtReceivable || 0;
-                  const pay = dashboardData?.stats?.totalDebtPayable || 0;
+                  const current = dashboardData?.stats?.totalBalance || 0;
+                  const rec = dashboardData?.stats?.pendingReceivables || 0;
+                  const pay = dashboardData?.stats?.pendingPayables || 0;
 
                   return (
                     <View style={{ gap: 10, marginTop: 8 }}>

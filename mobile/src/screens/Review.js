@@ -23,7 +23,7 @@ const Review = ({ route, navigation }) => {
   const { receipt } = route.params;
   const { 
     apiUrl, fetchDashboardData, fetchProducts, products, 
-    people, fetchPeople, wallets, fetchWallets 
+    people, fetchPeople, wallets, fetchWallets, user
   } = useContext(AppContext);
 
   const [saving, setSaving] = useState(false);
@@ -375,15 +375,17 @@ const Review = ({ route, navigation }) => {
 
         <ScrollView contentContainerStyle={styles.scrollContent}>
           {/* AI Doubt Warning Card */}
-          <View style={styles.warningCard}>
-            <Ionicons name="warning" size={24} color={COLORS.warning} />
-            <View style={styles.warningTextContainer}>
-              <Text style={styles.warningTitle}>الذكاء الاصطناعي غير متأكد</Text>
-              <Text style={styles.warningDesc}>
-                مستوى ثقة القراءة منخفض ({Math.round(receipt.confidence * 100)}%). يرجى مراجعة وتصحيح الحقول المحددة بالبرتقالي.
-              </Text>
+          {receipt.confidence < 0.82 && (
+            <View style={styles.warningCard}>
+              <Ionicons name="warning" size={24} color={COLORS.warning} />
+              <View style={styles.warningTextContainer}>
+                <Text style={styles.warningTitle}>الذكاء الاصطناعي غير متأكد</Text>
+                <Text style={styles.warningDesc}>
+                  مستوى ثقة القراءة منخفض ({Math.round(receipt.confidence * 100)}%). يرجى مراجعة وتصحيح الحقول المحددة بالبرتقالي.
+                </Text>
+              </View>
             </View>
-          </View>
+          )}
 
           {/* Scanned Image Preview */}
           {receipt.imageUrl ? (
