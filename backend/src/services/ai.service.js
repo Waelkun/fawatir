@@ -3,12 +3,11 @@ const fs = require('fs');
 
 // Initialize Gemini API
 const getGenAIInstance = () => {
-  const apiKey = process.env.GEMINI_API_KEY || 'AQ.Ab8RN6I4iFCbrEV543Uvabkde_OuYvk4vmdneqnQccWfhXtHjA';
-  if (!apiKey || apiKey.includes('YOUR_GEMINI_API_KEY')) {
-    console.warn('تحذير: لم يتم إعداد GEMINI_API_KEY بشكل صحيح في ملف .env');
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY غير موجود في إعدادات السيرفر.");
   }
-  
-  return new GoogleGenerativeAI(apiKey || '');
+  return new GoogleGenerativeAI(apiKey);
 };
 
 // Helper to convert file to generative part
