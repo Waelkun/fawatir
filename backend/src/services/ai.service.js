@@ -135,7 +135,7 @@ const parseReceipt = async (filePath, mimeType, existingProducts = []) => {
     if (error.status === 429 || error.message.includes('429') || error.message.toLowerCase().includes('quota') || error.message.toLowerCase().includes('limit')) {
       throw new Error("تجاوزت الحد المسموح لطلب تحليل الفاتورة حالياً. يرجى الانتظار دقيقة واحدة والمحاولة مرة أخرى.");
     }
-    throw new Error("فشل الذكاء الاصطناعي في قراءة الفاتورة، يرجى المحاولة مجدداً.");
+    throw new Error(`فشل الذكاء الاصطناعي في قراءة الفاتورة: ${error.message}`);
   }
 };
 
