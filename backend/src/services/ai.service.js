@@ -10,6 +10,95 @@ const getGenAIInstance = () => {
   return new GoogleGenerativeAI(apiKey);
 };
 
+// Mock GenerativeModel with Fallback
+const getGenerativeModelWithFallback = (modelName) => {
+  return {
+    generateContent: async (params) => {
+      let promptText = "";
+      let imagePart = null;
+      let jsonSchema = null;
+      let temperature = 0.1;
+      let responseMimeType = null;
+
+      const isString = typeof params === 'string';
+      if (isString) {
+        promptText = params;
+      } else {
+        const parts = params.contents && params.contents[0] && params.contents[0].parts;
+        if (parts) {
+          for (const part of parts) {
+            if (part.text) promptText = part.text;
+            if (part.inlineData) imagePart = part;
+          }
+        }
+        if (params.generationConfig) {
+          jsonSchema = params.generationConfig.responseSchema;
+          temperature = params.generationConfig.temperature || 0.1;
+          responseMimeType = params.generationConfig.responseMimeType;
+        }
+      }
+
+      try {
+        const openRouterKey = process.env.OPENROUTER_API_KEY;
+        if (openRouterKey && openRouterKey.trim() !== "") {
+          const content = [];
+          
+          let finalPrompt = promptText;
+          if (responseMimeType === "application/json" && jsonSchema) {
+            finalPrompt += "\n\nIMPORTANT: You must return ONLY a valid JSON object that adheres exactly to this JSON schema:\n" + JSON.stringify(jsonSchema);
+          }
+
+          content.push({ type: "text", text: finalPrompt });
+
+          if (imagePart) {
+            content.push({
+              type: "image_url",
+              image_url: { url: `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}` }
+            });
+          }
+
+          const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${openRouterKey}`,
+              "Content-Type": "application/json",
+              "HTTP-Referer": "http://localhost:5000",
+              "X-Title": "Fawatir"
+            },
+            body: JSON.stringify({
+              model: "google/gemini-2.5-flash",
+              messages: [{ role: "user", content: content }],
+              temperature: temperature,
+              response_format: responseMimeType === "application/json" ? { type: "json_object" } : undefined
+            })
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            let text = data.choices[0].message.content;
+            
+            if (responseMimeType === "application/json") {
+              text = text.replace(/^```json\s*/i, '').replace(/\s*```$/i, '');
+            }
+            console.log("OpenRouter API used successfully.");
+            return { response: { text: () => text } };
+          } else {
+            const errText = await response.text();
+            console.warn(`OpenRouter failed with status ${response.status}: ${errText}. Falling back to Gemini...`);
+          }
+        }
+      } catch (err) {
+        console.warn(`OpenRouter error: ${err.message}. Falling back to Gemini...`);
+      }
+
+      console.log("Using Gemini SDK fallback.");
+      const genAI = getGenAIInstance();
+      const model = genAI.getGenerativeModel({ model: modelName });
+      return model.generateContent(params);
+    }
+  };
+};
+
 // Helper to convert file to generative part
 const fileToGenerativePart = (path, mimeType) => {
   return {
@@ -25,8 +114,7 @@ const fileToGenerativePart = (path, mimeType) => {
  */
 const parseReceipt = async (filePath, mimeType, existingProducts = []) => {
   try {
-    const genAI = getGenAIInstance();
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = getGenerativeModelWithFallback("gemini-2.5-flash");
 
     const imagePart = fileToGenerativePart(filePath, mimeType);
     
@@ -145,8 +233,7 @@ const parseReceipt = async (filePath, mimeType, existingProducts = []) => {
  */
 const normalizeProductName = async (scannedName, existingProducts = []) => {
   try {
-    const genAI = getGenAIInstance();
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = getGenerativeModelWithFallback("gemini-2.5-flash");
 
     const productsListStr = existingProducts.map(p => p.name).join(', ');
 
@@ -210,8 +297,7 @@ const normalizeProductName = async (scannedName, existingProducts = []) => {
  */
 const generateProductDescription = async (productName) => {
   try {
-    const genAI = getGenAIInstance();
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = getGenerativeModelWithFallback("gemini-2.5-flash");
 
     const prompt = `اكتب وصفاً تسويقياً/مالياً قصيراً ومحترفاً جداً باللغة العربية لمنتج استهلاكي يسمى "${productName}". الوصف يجب ألا يتجاوز جملتين مفيدتين (مثال لـ مياه: مياه معدنية نقية تستخدم للشرب والترطيب اليومي وتعتبر من المصاريف الأساسية المتكررة).`;
 
@@ -228,8 +314,7 @@ const generateProductDescription = async (productName) => {
  */
 const generateAIInsights = async (expensesData, baseCurrency = "SAR") => {
   try {
-    const genAI = getGenAIInstance();
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = getGenerativeModelWithFallback("gemini-2.5-flash");
 
     const expensesJson = JSON.stringify(expensesData);
 
@@ -361,8 +446,7 @@ const getMockReceiptData = () => {
  */
 const translateProductToEnglishKeyword = async (productName) => {
   try {
-    const genAI = getGenAIInstance();
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = getGenerativeModelWithFallback("gemini-2.5-flash");
 
     const prompt = `
     Translate this Arabic item/product name to a single, general English noun suitable for search (e.g., "banana" for "موز", "milk" for "حليب كامل الدسم", "water" for "مياه معدنية", "chicken" for "صدر دجاج", "soap" for "صابون يدين").
