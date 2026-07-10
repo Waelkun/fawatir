@@ -10,8 +10,9 @@ const NVIDIA_MODEL      = 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning';
 const GEMINI_MODEL      = 'gemini-2.5-flash';
 const OPENROUTER_MODEL  = 'google/gemini-2.5-flash';
 
-// Per-provider timeout: 50 seconds each before trying the next one
-const PROVIDER_TIMEOUT_MS = 50000;
+// NVIDIA always times out — try it fast (20s) then move to Gemini/OpenRouter
+const NVIDIA_TIMEOUT_MS = 20000;
+const FALLBACK_TIMEOUT_MS = 60000;
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -160,12 +161,19 @@ const callGemini = async (messages, options = {}) => {
     }
   }
 
+  const generationConfig = {
+    temperature: options.temperature ?? 0.1,
+    maxOutputTokens: options.max_tokens ?? 8192,
+  };
+
+  // Use Gemini's native JSON mode for guaranteed clean JSON (no code fences)
+  if (options.jsonMode) {
+    generationConfig.responseMimeType = 'application/json';
+  }
+
   const result = await model.generateContent({
     contents: [{ role: 'user', parts }],
-    generationConfig: {
-      temperature: options.temperature ?? 0.1,
-      maxOutputTokens: options.max_tokens ?? 4096,
-    },
+    generationConfig,
   });
 
   return result.response.text();
@@ -179,6 +187,18 @@ const callOpenRouter = async (messages, options = {}) => {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey || !apiKey.trim()) throw new Error('OPENROUTER_API_KEY not configured');
 
+  const body = {
+    model: OPENROUTER_MODEL,
+    messages,
+    temperature: options.temperature ?? 0.1,
+    max_tokens: options.max_tokens ?? 8192,
+  };
+
+  // OpenRouter supports OpenAI-style JSON mode
+  if (options.jsonMode) {
+    body.response_format = { type: 'json_object' };
+  }
+
   const res = await fetch(OPENROUTER_API_URL, {
     method: 'POST',
     headers: {
@@ -187,12 +207,7 @@ const callOpenRouter = async (messages, options = {}) => {
       'HTTP-Referer': 'https://fawatir.app',
       'X-Title': 'Fawatir',
     },
-    body: JSON.stringify({
-      model: OPENROUTER_MODEL,
-      messages,
-      temperature: options.temperature ?? 0.1,
-      max_tokens: options.max_tokens ?? 4096,
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
@@ -211,9 +226,9 @@ const callOpenRouter = async (messages, options = {}) => {
  */
 const callAI = async (messages, options = {}) => {
   const providers = [
-    { name: 'NVIDIA',      fn: callNvidia },
-    { name: 'Gemini',      fn: callGemini },
-    { name: 'OpenRouter',  fn: callOpenRouter },
+    { name: 'NVIDIA',      fn: callNvidia,     timeout: NVIDIA_TIMEOUT_MS },
+    { name: 'Gemini',      fn: callGemini,     timeout: FALLBACK_TIMEOUT_MS },
+    { name: 'OpenRouter',  fn: callOpenRouter,  timeout: FALLBACK_TIMEOUT_MS },
   ];
 
   let lastError;
@@ -222,7 +237,7 @@ const callAI = async (messages, options = {}) => {
       console.log(`[AI] Trying ${provider.name}...`);
       const result = await withTimeout(
         provider.fn(messages, options),
-        PROVIDER_TIMEOUT_MS,
+        provider.timeout,
         provider.name
       );
       console.log(`[AI] ${provider.name} succeeded ✓`);
@@ -289,8 +304,8 @@ const parseReceipt = async (filePath, mimeType, existingProducts = []) => {
       },
     ];
 
-    const text = await callAI(messages, { temperature: 0.1, max_tokens: 8192 });
-    console.log('AI Parse Output:', text.substring(0, 200));
+    const text = await callAI(messages, { temperature: 0.1, max_tokens: 16384, jsonMode: true });
+    console.log('AI Parse Output:', text.substring(0, 300));
     return extractJSON(text);
 
   } catch (error) {
@@ -324,7 +339,7 @@ const normalizeProductName = async (scannedName, existingProducts = []) => {
     أرجع JSON فقط: {"normalizedName": "...", "category": "..."}
     `;
 
-    const text = await callAI([{ role: 'user', content: prompt }], { temperature: 0.2 });
+    const text = await callAI([{ role: 'user', content: prompt }], { temperature: 0.2, jsonMode: true });
     return extractJSON(text);
   } catch (error) {
     console.error('Error in normalizeProductName AI service:', error);
@@ -372,7 +387,7 @@ const generateAIInsights = async (expensesData, baseCurrency = 'SAR') => {
     الأنواع المتاحة لـ type: warning, tip, success, price_alert
     `;
 
-    const text = await callAI([{ role: 'user', content: prompt }], { temperature: 0.4, max_tokens: 2048 });
+    const text = await callAI([{ role: 'user', content: prompt }], { temperature: 0.4, max_tokens: 4096, jsonMode: true });
     const parsed = extractJSON(text);
     return Array.isArray(parsed) ? parsed : (parsed.insights || parsed.data || [parsed]);
 
