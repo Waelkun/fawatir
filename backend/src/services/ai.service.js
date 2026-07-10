@@ -6,9 +6,45 @@ const NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
 const OMNI_MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning";
 
 /**
+ * Extracts the first valid JSON object or array from a string.
+ * Handles cases where model wraps JSON in markdown code fences or adds extra text.
+ */
+const extractJSON = (text) => {
+  // Strip markdown code fences
+  let cleaned = text.replace(/^```(?:json)?\s*/im, '').replace(/\s*```\s*$/im, '').trim();
+
+  // Try direct parse first
+  try { return JSON.parse(cleaned); } catch (_) {}
+
+  // Find first { or [ and extract from there
+  const objStart = cleaned.indexOf('{');
+  const arrStart = cleaned.indexOf('[');
+  let start = -1;
+
+  if (objStart === -1 && arrStart === -1) throw new Error('No JSON found in model response');
+  if (objStart === -1) start = arrStart;
+  else if (arrStart === -1) start = objStart;
+  else start = Math.min(objStart, arrStart);
+
+  const sub = cleaned.substring(start);
+  try { return JSON.parse(sub); } catch (_) {}
+
+  // Try to find matching closing bracket
+  let depth = 0;
+  const open = sub[0];
+  const close = open === '{' ? '}' : ']';
+  for (let i = 0; i < sub.length; i++) {
+    if (sub[i] === open) depth++;
+    else if (sub[i] === close) { depth--; if (depth === 0) { try { return JSON.parse(sub.substring(0, i + 1)); } catch (_) {} } }
+  }
+
+  throw new Error('Could not extract valid JSON from model response');
+};
+
+/**
  * Core function to call NVIDIA NIM API
  * @param {Array} messages - Chat messages array
- * @param {Object} options - Additional options (temperature, response_format, etc.)
+ * @param {Object} options - Additional options (temperature, etc.)
  */
 const callNvidiaAPI = async (messages, options = {}) => {
   const apiKey = process.env.NVIDIA_API_KEY;
@@ -21,16 +57,13 @@ const callNvidiaAPI = async (messages, options = {}) => {
     messages,
     temperature: options.temperature ?? 0.6,
     top_p: options.top_p ?? 0.95,
-    max_tokens: options.max_tokens ?? 65536,
+    max_tokens: options.max_tokens ?? 16384,
     stream: false,
-    // Nemotron reasoning params
-    chat_template_kwargs: { enable_thinking: true },
-    reasoning_budget: 16384,
+    extra_body: {
+      chat_template_kwargs: { enable_thinking: true },
+      reasoning_budget: 4096,
+    },
   };
-
-  if (options.response_format) {
-    body.response_format = options.response_format;
-  }
 
   const response = await fetch(NVIDIA_API_URL, {
     method: "POST",
@@ -52,7 +85,7 @@ const callNvidiaAPI = async (messages, options = {}) => {
 
   // Log reasoning if available (Nemotron thinking)
   if (message.reasoning_content) {
-    console.log("[Nemotron Reasoning]:", message.reasoning_content.substring(0, 300));
+    console.log("[Nemotron Reasoning]:", message.reasoning_content.substring(0, 200));
   }
 
   return message.content;
@@ -63,6 +96,7 @@ const fileToBase64DataUrl = (filePath, mimeType) => {
   const base64 = Buffer.from(fs.readFileSync(filePath)).toString("base64");
   return `data:${mimeType};base64,${base64}`;
 };
+
 
 /**
  * Parses a receipt image and returns structured financial data using NVIDIA Vision API
@@ -156,15 +190,11 @@ const parseReceipt = async (filePath, mimeType, existingProducts = []) => {
     const aiPromise = callNvidiaAPI(messages, {
       temperature: 0.1,
       max_tokens: 4096,
-      response_format: { type: "json_object" }
     });
 
     const text = await Promise.race([aiPromise, timeoutPromise]);
     console.log("NVIDIA Raw Parse Output:", text.substring(0, 200));
-
-    // Clean any markdown code fences if present
-    const cleaned = text.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
-    return JSON.parse(cleaned);
+    return extractJSON(text);
 
   } catch (error) {
     console.error("Error in parseReceipt AI service:", error.message);
@@ -213,11 +243,9 @@ const normalizeProductName = async (scannedName, existingProducts = []) => {
       { role: "user", content: prompt }
     ], {
       temperature: 0.2,
-      response_format: { type: "json_object" }
     });
 
-    const cleaned = text.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
-    return JSON.parse(cleaned);
+    return extractJSON(text);
   } catch (error) {
     console.error("Error in normalizeProductName AI service:", error);
     // Safe fallback
@@ -281,11 +309,9 @@ const generateAIInsights = async (expensesData, baseCurrency = "SAR") => {
     ], {
       temperature: 0.4,
       max_tokens: 2048,
-      response_format: { type: "json_object" }
     });
 
-    const cleaned = text.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
-    const parsed = JSON.parse(cleaned);
+    const parsed = extractJSON(text);
     // Handle if model wraps in an object like { insights: [...] }
     return Array.isArray(parsed) ? parsed : (parsed.insights || parsed.data || [parsed]);
 
