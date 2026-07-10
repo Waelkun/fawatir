@@ -27,11 +27,17 @@ const withTimeout = (promise, ms, providerName) => {
 
 /**
  * Extracts the first valid JSON object or array from any string.
- * Handles markdown code fences and extra prose around the JSON.
+ * Handles: markdown code fences, <think>...</think> tags (Nemotron), extra prose.
  */
 const extractJSON = (text) => {
+  // Log first 500 chars to help debug unexpected model output
+  console.log('[extractJSON] raw input:', text.substring(0, 500));
+
+  // Strip <think>...</think> blocks (Nemotron reasoning in content)
+  let cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
   // Strip markdown code fences
-  let cleaned = text.replace(/^```(?:json)?\s*/im, '').replace(/\s*```\s*$/im, '').trim();
+  cleaned = cleaned.replace(/^```(?:json)?\s*/im, '').replace(/\s*```\s*$/im, '').trim();
 
   // Direct parse
   try { return JSON.parse(cleaned); } catch (_) {}
@@ -39,7 +45,10 @@ const extractJSON = (text) => {
   // Find first { or [
   const objStart = cleaned.indexOf('{');
   const arrStart = cleaned.indexOf('[');
-  if (objStart === -1 && arrStart === -1) throw new Error('No JSON found in model response');
+  if (objStart === -1 && arrStart === -1) {
+    console.error('[extractJSON] No JSON found. Full text:', text.substring(0, 1000));
+    throw new Error('No JSON found in model response');
+  }
 
   let start;
   if (objStart === -1) start = arrStart;
@@ -63,6 +72,7 @@ const extractJSON = (text) => {
     }
   }
 
+  console.error('[extractJSON] Bracket matching failed. Full text:', text.substring(0, 1000));
   throw new Error('Could not extract valid JSON from model response');
 };
 
@@ -81,6 +91,7 @@ const callNvidia = async (messages, options = {}) => {
   const apiKey = process.env.NVIDIA_API_KEY;
   if (!apiKey || !apiKey.trim()) throw new Error('NVIDIA_API_KEY not configured');
 
+  // Use only standard OpenAI-compatible fields — no custom/unsupported params
   const body = {
     model: NVIDIA_MODEL,
     messages,
@@ -88,8 +99,6 @@ const callNvidia = async (messages, options = {}) => {
     top_p: 0.9,
     max_tokens: options.max_tokens ?? 4096,
     stream: false,
-    // Flatten extra_body fields directly into body (required for raw fetch)
-    chat_template_kwargs: { enable_thinking: false },
   };
 
   const res = await fetch(NVIDIA_API_URL, {
@@ -109,10 +118,14 @@ const callNvidia = async (messages, options = {}) => {
 
   const data = await res.json();
   const message = data.choices[0].message;
+
+  // Nemotron may put reasoning in reasoning_content OR inside <think> tags in content
   if (message.reasoning_content) {
-    console.log('[NVIDIA Reasoning]:', message.reasoning_content.substring(0, 150));
+    console.log('[NVIDIA Reasoning snippet]:', message.reasoning_content.substring(0, 150));
   }
-  return message.content;
+
+  // Return only the actual content (extractJSON will strip <think> tags if present)
+  return message.content || '';
 };
 
 // ─── Provider 2: Google Gemini (direct SDK) ────────────────────────────────────
