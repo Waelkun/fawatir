@@ -36,8 +36,8 @@ const extractJSON = (text) => {
   // Strip <think>...</think> blocks (Nemotron reasoning in content)
   let cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 
-  // Strip markdown code fences
-  cleaned = cleaned.replace(/^```(?:json)?\s*/im, '').replace(/\s*```\s*$/im, '').trim();
+  // Strip markdown code fences (handle optional leading whitespace before backticks)
+  cleaned = cleaned.replace(/^\s*```(?:json)?\s*/im, '').replace(/\s*```\s*$/im, '').trim();
 
   // Direct parse
   try { return JSON.parse(cleaned); } catch (_) {}
@@ -289,7 +289,7 @@ const parseReceipt = async (filePath, mimeType, existingProducts = []) => {
       },
     ];
 
-    const text = await callAI(messages, { temperature: 0.1, max_tokens: 4096 });
+    const text = await callAI(messages, { temperature: 0.1, max_tokens: 8192 });
     console.log('AI Parse Output:', text.substring(0, 200));
     return extractJSON(text);
 
