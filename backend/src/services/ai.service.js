@@ -1,27 +1,47 @@
 const fs = require('fs');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-// NVIDIA NIM API - OpenAI-compatible endpoint
-const NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
-// Nemotron Omni: supports both images and text + reasoning
-const OMNI_MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning";
+// ─── API Endpoints ─────────────────────────────────────────────────────────────
+const NVIDIA_API_URL    = 'https://integrate.api.nvidia.com/v1/chat/completions';
+const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+
+// ─── Models ────────────────────────────────────────────────────────────────────
+const NVIDIA_MODEL      = 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning';
+const GEMINI_MODEL      = 'gemini-2.5-flash';
+const OPENROUTER_MODEL  = 'google/gemini-2.5-flash';
+
+// Per-provider timeout: 50 seconds each before trying the next one
+const PROVIDER_TIMEOUT_MS = 50000;
+
+// ─── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
- * Extracts the first valid JSON object or array from a string.
- * Handles cases where model wraps JSON in markdown code fences or adds extra text.
+ * Wraps a promise with a per-provider timeout.
+ */
+const withTimeout = (promise, ms, providerName) => {
+  const timer = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error(`TIMEOUT_${providerName}: exceeded ${ms / 1000}s`)), ms)
+  );
+  return Promise.race([promise, timer]);
+};
+
+/**
+ * Extracts the first valid JSON object or array from any string.
+ * Handles markdown code fences and extra prose around the JSON.
  */
 const extractJSON = (text) => {
   // Strip markdown code fences
   let cleaned = text.replace(/^```(?:json)?\s*/im, '').replace(/\s*```\s*$/im, '').trim();
 
-  // Try direct parse first
+  // Direct parse
   try { return JSON.parse(cleaned); } catch (_) {}
 
-  // Find first { or [ and extract from there
+  // Find first { or [
   const objStart = cleaned.indexOf('{');
   const arrStart = cleaned.indexOf('[');
-  let start = -1;
-
   if (objStart === -1 && arrStart === -1) throw new Error('No JSON found in model response');
+
+  let start;
   if (objStart === -1) start = arrStart;
   else if (arrStart === -1) start = objStart;
   else start = Math.min(objStart, arrStart);
@@ -29,77 +49,187 @@ const extractJSON = (text) => {
   const sub = cleaned.substring(start);
   try { return JSON.parse(sub); } catch (_) {}
 
-  // Try to find matching closing bracket
+  // Bracket-matching extraction
   let depth = 0;
-  const open = sub[0];
+  const open  = sub[0];
   const close = open === '{' ? '}' : ']';
   for (let i = 0; i < sub.length; i++) {
-    if (sub[i] === open) depth++;
-    else if (sub[i] === close) { depth--; if (depth === 0) { try { return JSON.parse(sub.substring(0, i + 1)); } catch (_) {} } }
+    if (sub[i] === open)  depth++;
+    if (sub[i] === close) {
+      depth--;
+      if (depth === 0) {
+        try { return JSON.parse(sub.substring(0, i + 1)); } catch (_) {}
+      }
+    }
   }
 
   throw new Error('Could not extract valid JSON from model response');
 };
 
+// Helper to convert file to base64 data URL
+const fileToBase64DataUrl = (filePath, mimeType) => {
+  const base64 = Buffer.from(fs.readFileSync(filePath)).toString('base64');
+  return `data:${mimeType};base64,${base64}`;
+};
+
+// ─── Provider 1: NVIDIA NIM ────────────────────────────────────────────────────
 /**
- * Core function to call NVIDIA NIM API
- * @param {Array} messages - Chat messages array
- * @param {Object} options - Additional options (temperature, etc.)
+ * Calls NVIDIA NIM API (OpenAI-compatible, supports vision + text).
+ * Reasoning is disabled to stay within timeout limits.
  */
-const callNvidiaAPI = async (messages, options = {}) => {
+const callNvidia = async (messages, options = {}) => {
   const apiKey = process.env.NVIDIA_API_KEY;
-  if (!apiKey) {
-    throw new Error("NVIDIA_API_KEY غير موجود في إعدادات السيرفر.");
-  }
+  if (!apiKey || !apiKey.trim()) throw new Error('NVIDIA_API_KEY not configured');
 
   const body = {
-    model: OMNI_MODEL,
+    model: NVIDIA_MODEL,
     messages,
-    temperature: options.temperature ?? 0.6,
-    top_p: options.top_p ?? 0.95,
-    max_tokens: options.max_tokens ?? 16384,
+    temperature: options.temperature ?? 0.4,
+    top_p: 0.9,
+    max_tokens: options.max_tokens ?? 4096,
     stream: false,
-    extra_body: {
-      chat_template_kwargs: { enable_thinking: true },
-      reasoning_budget: 4096,
-    },
+    // Flatten extra_body fields directly into body (required for raw fetch)
+    chat_template_kwargs: { enable_thinking: false },
   };
 
-  const response = await fetch(NVIDIA_API_URL, {
-    method: "POST",
+  const res = await fetch(NVIDIA_API_URL, {
+    method: 'POST',
     headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "Accept": "application/json",
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
     },
     body: JSON.stringify(body),
   });
 
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`NVIDIA API error (${response.status}): ${errText}`);
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`NVIDIA ${res.status}: ${errText}`);
   }
 
-  const data = await response.json();
+  const data = await res.json();
   const message = data.choices[0].message;
-
-  // Log reasoning if available (Nemotron thinking)
   if (message.reasoning_content) {
-    console.log("[Nemotron Reasoning]:", message.reasoning_content.substring(0, 200));
+    console.log('[NVIDIA Reasoning]:', message.reasoning_content.substring(0, 150));
   }
-
   return message.content;
 };
 
-// Helper to convert file to base64 data URL
-const fileToBase64DataUrl = (filePath, mimeType) => {
-  const base64 = Buffer.from(fs.readFileSync(filePath)).toString("base64");
-  return `data:${mimeType};base64,${base64}`;
+// ─── Provider 2: Google Gemini (direct SDK) ────────────────────────────────────
+/**
+ * Calls Gemini API directly via the official SDK.
+ * Converts OpenAI-style messages (including image_url) to Gemini format.
+ */
+const callGemini = async (messages, options = {}) => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || !apiKey.trim()) throw new Error('GEMINI_API_KEY not configured');
+
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({ model: GEMINI_MODEL });
+
+  // Convert OpenAI-style messages → Gemini parts
+  const parts = [];
+  for (const msg of messages) {
+    if (typeof msg.content === 'string') {
+      parts.push({ text: msg.content });
+    } else if (Array.isArray(msg.content)) {
+      for (const part of msg.content) {
+        if (part.type === 'text') {
+          parts.push({ text: part.text });
+        } else if (part.type === 'image_url') {
+          // Extract base64 data from data URL
+          const match = part.image_url.url.match(/^data:([^;]+);base64,(.+)$/);
+          if (match) {
+            parts.push({ inlineData: { mimeType: match[1], data: match[2] } });
+          }
+        }
+      }
+    }
+  }
+
+  const result = await model.generateContent({
+    contents: [{ role: 'user', parts }],
+    generationConfig: {
+      temperature: options.temperature ?? 0.1,
+      maxOutputTokens: options.max_tokens ?? 4096,
+    },
+  });
+
+  return result.response.text();
 };
 
+// ─── Provider 3: OpenRouter ────────────────────────────────────────────────────
+/**
+ * Calls OpenRouter API (OpenAI-compatible, supports image_url format).
+ */
+const callOpenRouter = async (messages, options = {}) => {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey || !apiKey.trim()) throw new Error('OPENROUTER_API_KEY not configured');
+
+  const res = await fetch(OPENROUTER_API_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://fawatir.app',
+      'X-Title': 'Fawatir',
+    },
+    body: JSON.stringify({
+      model: OPENROUTER_MODEL,
+      messages,
+      temperature: options.temperature ?? 0.1,
+      max_tokens: options.max_tokens ?? 4096,
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`OpenRouter ${res.status}: ${errText}`);
+  }
+
+  const data = await res.json();
+  return data.choices[0].message.content;
+};
+
+// ─── Unified Fallback Caller ───────────────────────────────────────────────────
+/**
+ * Tries AI providers in order: NVIDIA → Gemini → OpenRouter.
+ * Each provider gets PROVIDER_TIMEOUT_MS before the next one is tried.
+ */
+const callAI = async (messages, options = {}) => {
+  const providers = [
+    { name: 'NVIDIA',      fn: callNvidia },
+    { name: 'Gemini',      fn: callGemini },
+    { name: 'OpenRouter',  fn: callOpenRouter },
+  ];
+
+  let lastError;
+  for (const provider of providers) {
+    try {
+      console.log(`[AI] Trying ${provider.name}...`);
+      const result = await withTimeout(
+        provider.fn(messages, options),
+        PROVIDER_TIMEOUT_MS,
+        provider.name
+      );
+      console.log(`[AI] ${provider.name} succeeded ✓`);
+      return result;
+    } catch (err) {
+      console.warn(`[AI] ${provider.name} failed: ${err.message}`);
+      lastError = err;
+    }
+  }
+
+  throw new Error(`فشلت جميع خدمات الذكاء الاصطناعي. آخر خطأ: ${lastError?.message}`);
+};
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Business Functions
+// ──────────────────────────────────────────────────────────────────────────────
 
 /**
- * Parses a receipt image and returns structured financial data using NVIDIA Vision API
+ * Parses a receipt image and returns structured financial data.
+ * Uses the unified fallback chain: NVIDIA → Gemini → OpenRouter.
  */
 const parseReceipt = async (filePath, mimeType, existingProducts = []) => {
   try {
@@ -118,91 +248,45 @@ const parseReceipt = async (filePath, mimeType, existingProducts = []) => {
     4. حدد العملة المكتوبة (currency) بشكل دقيق، مثل (SAR, USD, EUR, TRY). إذا لم تتحدد، افترض SAR.
     5. استخرج جميع المواد المشتراة في الفاتورة (items) مع التفاصيل:
        - originalName: اسم المنتج كما هو مكتوب في الفاتورة حرفياً.
-       - normalizedName: ترجمة الاسم للعربية الفصحى النظيفة وتوحيده. لدينا قائمة بمنتجات المستخدم الحالية: [${existingProductsList}]. إذا كان المنتج الممسوح يطابق أحد هذه المنتجات في المعنى أو اللفظ (مثلاً "أرز بسمتي" يطابق منتج المستخدم "رز وائل" أو "صدر دجاج" يطابق "دجاج صدور")، فيجب عليك استخدام اسم منتج المستخدم الحالي تماماً كـ normalizedName لتفادي التكرار والاعتماد على التسميات المخصصة للمستخدم. وإذا لم يكن له مثيل، قم بتوحيد الاسم للعربية الفصحى النظيفة وإزالة الرموز والأحجام والكميات (مثال "مياه 500 مل" تصبح "مياه معدنية").
-       - category: تصنيف المنتج إلى إحدى الفئات التالية فقط:
-         * "طعام ومشروبات"
-         * "تقنية وإلكترونيات"
-         * "مواصلات وسيارات"
-         * "ملابس وموضة"
-         * "صحة وعناية شخصية"
-         * "منزل وأثاث"
-         * "ترفيه وألعاب"
-         * "خدمات وفواتير"
-         * "أخرى"
-       - description: اكتب وصفاً تسويقياً/مالياً قصيراً جداً باللغة العربية لهذا المنتج (جملة واحدة مفيدة).
-       - quantity: الكمية (عدد أو وزن). القيمة الافتراضية 1.
+       - normalizedName: ترجمة الاسم للعربية الفصحى النظيفة وتوحيده. لدينا قائمة بمنتجات المستخدم الحالية: [${existingProductsList}]. إذا كان المنتج يطابق أحد هذه المنتجات في المعنى، استخدم اسم المستخدم تماماً. وإلا قم بتوحيد الاسم للعربية الفصحى وإزالة الأحجام والكميات (مثال "مياه 500 مل" تصبح "مياه معدنية").
+       - category: تصنيف المنتج إلى إحدى الفئات التالية فقط: "طعام ومشروبات", "تقنية وإلكترونيات", "مواصلات وسيارات", "ملابس وموضة", "صحة وعناية شخصية", "منزل وأثاث", "ترفيه وألعاب", "خدمات وفواتير", "أخرى"
+       - description: وصف تسويقي قصير باللغة العربية (جملة واحدة).
+       - quantity: الكمية. القيمة الافتراضية 1.
        - price: سعر الوحدة قبل الخصم.
-       - discount: الخصم المطبق على هذا المنتج (إذا وجد، وإلا 0).
-       - total: المجموع النهائي للمنتج (الكمية * السعر) - الخصم.
-    6. استخرج القيم الإجمالية للفاتورة:
+       - discount: الخصم على هذا المنتج (وإلا 0).
+       - total: المجموع النهائي للمنتج.
+    6. استخرج القيم الإجمالية:
        - tax: إجمالي الضريبة المضافة (VAT).
-       - discount: إجمالي خصم الفاتورة العام (إن وجد).
-       - total: المجموع النهائي والكامل للفاتورة المدفوع فعلياً.
-    7. احسب درجة ثقتك بقراءة البيانات (confidence) كقيمة عشرية بين 0.0 و 1.0. إذا كانت الفاتورة ضبابية أو صعبة القراءة، خفض القيمة.
+       - discount: إجمالي الخصم العام.
+       - total: المجموع النهائي المدفوع فعلياً.
+    7. احسب درجة ثقتك (confidence) كقيمة بين 0.0 و 1.0.
     
     أرجع JSON فقط بهذا الشكل بدون أي نص آخر:
-    {
-      "storeName": "...",
-      "date": "YYYY-MM-DD",
-      "time": "HH:MM",
-      "currency": "SAR",
-      "tax": 0,
-      "discount": 0,
-      "total": 0,
-      "confidence": 0.9,
-      "items": [
-        {
-          "originalName": "...",
-          "normalizedName": "...",
-          "category": "...",
-          "description": "...",
-          "quantity": 1,
-          "price": 0,
-          "discount": 0,
-          "total": 0
-        }
-      ]
-    }
+    {"storeName":"...","date":"YYYY-MM-DD","time":"HH:MM","currency":"SAR","tax":0,"discount":0,"total":0,"confidence":0.9,"items":[{"originalName":"...","normalizedName":"...","category":"...","description":"...","quantity":1,"price":0,"discount":0,"total":0}]}
     `;
 
     const messages = [
-      { role: "system", content: systemPrompt },
+      { role: 'system', content: systemPrompt },
       {
-        role: "user",
+        role: 'user',
         content: [
-          {
-            type: "image_url",
-            image_url: { url: imageDataUrl }
-          },
-          {
-            type: "text",
-            text: userPrompt
-          }
-        ]
-      }
+          { type: 'image_url', image_url: { url: imageDataUrl } },
+          { type: 'text', text: userPrompt },
+        ],
+      },
     ];
 
-    // Add a 90-second timeout to prevent infinite hanging
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('TIMEOUT: NVIDIA API took too long (>90s)')), 90000)
-    );
-
-    const aiPromise = callNvidiaAPI(messages, {
-      temperature: 0.1,
-      max_tokens: 4096,
-    });
-
-    const text = await Promise.race([aiPromise, timeoutPromise]);
-    console.log("NVIDIA Raw Parse Output:", text.substring(0, 200));
+    const text = await callAI(messages, { temperature: 0.1, max_tokens: 4096 });
+    console.log('AI Parse Output:', text.substring(0, 200));
     return extractJSON(text);
 
   } catch (error) {
-    console.error("Error in parseReceipt AI service:", error.message);
-    if (error.message.includes('TIMEOUT')) {
-      throw new Error("انتهت مهلة الاتصال بالذكاء الاصطناعي. يرجى التحقق من اتصالك بالإنترنت والمحاولة مجدداً.");
+    console.error('Error in parseReceipt AI service:', error.message);
+    if (error.message.toLowerCase().includes('timeout') || error.message.toLowerCase().includes('exceeded')) {
+      throw new Error('انتهت مهلة الاتصال بالذكاء الاصطناعي. يرجى التحقق من اتصالك بالإنترنت والمحاولة مجدداً.');
     }
-    if (error.status === 429 || error.message.includes('429') || error.message.toLowerCase().includes('quota') || error.message.toLowerCase().includes('limit')) {
-      throw new Error("تجاوزت الحد المسموح لطلب تحليل الفاتورة حالياً. يرجى الانتظار دقيقة واحدة والمحاولة مرة أخرى.");
+    if (error.message.includes('429') || error.message.toLowerCase().includes('quota') || error.message.toLowerCase().includes('limit')) {
+      throw new Error('تجاوزت الحد المسموح لطلب تحليل الفاتورة حالياً. يرجى الانتظار دقيقة واحدة والمحاولة مرة أخرى.');
     }
     throw new Error(`فشل الذكاء الاصطناعي في قراءة الفاتورة: ${error.message}`);
   }
@@ -210,8 +294,7 @@ const parseReceipt = async (filePath, mimeType, existingProducts = []) => {
 
 
 /**
- * Normalizes a scanned product name, translating it to clean Arabic, classifying it,
- * and checking if it matches any existing user products.
+ * Normalizes a scanned product name, translating it to clean Arabic and classifying it.
  */
 const normalizeProductName = async (scannedName, existingProducts = []) => {
   try {
@@ -222,36 +305,19 @@ const normalizeProductName = async (scannedName, existingProducts = []) => {
     المطلوب:
     1. ترجمة الاسم للعربية الفصحى النظيفة وتوحيده (مثلاً Chicken Breasts أو صدر دجاج أو Tavuk Göğsü تصبح جميعها "صدر دجاج").
     2. إزالة أي رموز غير مهمة، رموز أحجام، أو كميات من الاسم (مثل "مياه 500 مل" تصبح "مياه معدنية").
-    3. تصنيف المنتج إلى إحدى الفئات التالية فقط:
-       - "طعام ومشروبات"
-       - "تقنية وإلكترونيات"
-       - "مواصلات وسيارات"
-       - "ملابس وموضة"
-       - "صحة وعناية شخصية"
-       - "منزل وأثاث"
-       - "ترفيه وألعاب"
-       - "خدمات وفواتير"
-       - "أخرى"
-    4. قارن الاسم الجديد مع قائمة أسماء منتجات المستخدم الحالية المتوفرة: [${productsListStr}].
-       - إذا كان هناك منتج يحمل نفس المعنى والترجمة الدقيقة (حتى لو اختلف اللفظ قليلاً)، اختر اسم المنتج القديم تماماً لتوحيدهما معاً وتفادي التكرار.
+    3. تصنيف المنتج إلى إحدى الفئات التالية فقط: "طعام ومشروبات", "تقنية وإلكترونيات", "مواصلات وسيارات", "ملابس وموضة", "صحة وعناية شخصية", "منزل وأثاث", "ترفيه وألعاب", "خدمات وفواتير", "أخرى"
+    4. قارن الاسم الجديد مع قائمة منتجات المستخدم: [${productsListStr}]. إذا كان هناك منتج بنفس المعنى، استخدم اسمه تماماً.
     
-    أرجع JSON فقط بهذا الشكل بدون أي نص آخر:
-    {"normalizedName": "...", "category": "..."}
+    أرجع JSON فقط: {"normalizedName": "...", "category": "..."}
     `;
 
-    const text = await callNvidiaAPI([
-      { role: "user", content: prompt }
-    ], {
-      temperature: 0.2,
-    });
-
+    const text = await callAI([{ role: 'user', content: prompt }], { temperature: 0.2 });
     return extractJSON(text);
   } catch (error) {
-    console.error("Error in normalizeProductName AI service:", error);
-    // Safe fallback
+    console.error('Error in normalizeProductName AI service:', error);
     return {
       normalizedName: scannedName.trim().substring(0, 50),
-      category: "أخرى"
+      category: 'أخرى',
     };
   }
 };
@@ -261,15 +327,12 @@ const normalizeProductName = async (scannedName, existingProducts = []) => {
  */
 const generateProductDescription = async (productName) => {
   try {
-    const prompt = `اكتب وصفاً تسويقياً/مالياً قصيراً ومحترفاً جداً باللغة العربية لمنتج استهلاكي يسمى "${productName}". الوصف يجب ألا يتجاوز جملتين مفيدتين (مثال لـ مياه: مياه معدنية نقية تستخدم للشرب والترطيب اليومي وتعتبر من المصاريف الأساسية المتكررة). أرجع النص فقط بدون أي تنسيق.`;
+    const prompt = `اكتب وصفاً تسويقياً/مالياً قصيراً ومحترفاً جداً باللغة العربية لمنتج استهلاكي يسمى "${productName}". الوصف يجب ألا يتجاوز جملتين مفيدتين. أرجع النص فقط بدون أي تنسيق.`;
 
-    const text = await callNvidiaAPI([
-      { role: "user", content: prompt }
-    ], { temperature: 0.3 });
-
+    const text = await callAI([{ role: 'user', content: prompt }], { temperature: 0.3 });
     return text.trim();
   } catch (error) {
-    console.error("Error in generateProductDescription AI service:", error);
+    console.error('Error in generateProductDescription AI service:', error);
     return `منتج استهلاكي مصنف ضمن المصاريف الشخصية.`;
   }
 };
@@ -277,7 +340,7 @@ const generateProductDescription = async (productName) => {
 /**
  * Generates smart financial insights based on recent user expenses.
  */
-const generateAIInsights = async (expensesData, baseCurrency = "SAR") => {
+const generateAIInsights = async (expensesData, baseCurrency = 'SAR') => {
   try {
     const expensesJson = JSON.stringify(expensesData);
 
@@ -288,111 +351,94 @@ const generateAIInsights = async (expensesData, baseCurrency = "SAR") => {
     
     العملة الأساسية للمستخدم هي: ${baseCurrency}.
     
-    المطلوب توليد 3 إلى 4 نصائح/رؤى مالية ذكية ومخصصة (AI Insights) باللغة العربية الفصحى.
-    يجب أن تكون النصائح عملية ومحددة (مع ذكر أرقام ونسب وتغيرات حقيقية في الأسعار أو الفئات بناءً على البيانات المقدمة).
+    المطلوب توليد 3 إلى 4 نصائح/رؤى مالية ذكية ومخصصة باللغة العربية الفصحى.
+    يجب أن تكون النصائح عملية ومحددة مع ذكر أرقام ونسب حقيقية بناءً على البيانات.
     
-    أمثلة للرؤى المطلوبة:
-    - "ارتفع إنفاقك على فئة الطعام بنسبة 15% هذا الأسبوع مقارنة بالمتوسط."
-    - "تلاحظ أن منتج 'مياه نوفا' قمت بشرائه 5 مرات بمتوسط سعر 12 ر.س، ننصح ببديل أو شراء بالجملة."
-    - "تغيّر سعر منتج 'قهوة أمريكانو' من 15 ر.س إلى 18 ر.س في آخر زيارتين لمتجر X."
-    
-    أرجع JSON فقط بهذا الشكل بدون أي نص آخر (مصفوفة):
-    [
-      {"id": "1", "type": "warning", "title": "...", "content": "..."},
-      {"id": "2", "type": "tip", "title": "...", "content": "..."}
-    ]
+    أرجع JSON فقط كمصفوفة:
+    [{"id":"1","type":"warning","title":"...","content":"..."},{"id":"2","type":"tip","title":"...","content":"..."}]
     الأنواع المتاحة لـ type: warning, tip, success, price_alert
     `;
 
-    const text = await callNvidiaAPI([
-      { role: "user", content: prompt }
-    ], {
-      temperature: 0.4,
-      max_tokens: 2048,
-    });
-
+    const text = await callAI([{ role: 'user', content: prompt }], { temperature: 0.4, max_tokens: 2048 });
     const parsed = extractJSON(text);
-    // Handle if model wraps in an object like { insights: [...] }
     return Array.isArray(parsed) ? parsed : (parsed.insights || parsed.data || [parsed]);
 
   } catch (error) {
-    console.error("Error in generateAIInsights AI service:", error);
-    // Standard mock insights if fails
+    console.error('Error in generateAIInsights AI service:', error);
     return [
       {
-        id: "1",
-        type: "tip",
-        title: "نصيحة توفير عامة",
-        content: "حاول شراء المنتجات الاستهلاكية اليومية مثل المياه والمناديل بكميات كبيرة لتوفير ما يصل إلى 15% شهرياً."
+        id: '1',
+        type: 'tip',
+        title: 'نصيحة توفير عامة',
+        content: 'حاول شراء المنتجات الاستهلاكية اليومية مثل المياه والمناديل بكميات كبيرة لتوفير ما يصل إلى 15% شهرياً.',
       },
       {
-        id: "2",
-        type: "warning",
-        title: "ارتفاع في قطاع المطاعم",
-        content: "مشترياتك في عطلة نهاية الأسبوع الأخيرة كانت أعلى من المعتاد بـ 20%، فكر في إعداد الوجبات منزلياً."
-      }
+        id: '2',
+        type: 'warning',
+        title: 'ارتفاع في قطاع المطاعم',
+        content: 'مشترياتك في عطلة نهاية الأسبوع الأخيرة كانت أعلى من المعتاد بـ 20%، فكر في إعداد الوجبات منزلياً.',
+      },
     ];
   }
 };
 
 const getMockReceiptData = () => {
   return {
-    storeName: "هايبر بنده (Hyper Panda)",
+    storeName: 'هايبر بنده (Hyper Panda)',
     date: new Date().toISOString().split('T')[0],
-    time: "18:30",
-    currency: "SAR",
+    time: '18:30',
+    currency: 'SAR',
     tax: 15.00,
     discount: 5.00,
     total: 115.00,
     confidence: 0.95,
     items: [
       {
-        originalName: "حليب طويل الأجل المراعي 4*1 لتر",
-        normalizedName: "حليب كامل الدسم",
-        category: "طعام ومشروبات",
-        description: "حليب سائل كامل الدسم معقم ومناسب للاستهلاك اليومي.",
+        originalName: 'حليب طويل الأجل المراعي 4*1 لتر',
+        normalizedName: 'حليب كامل الدسم',
+        category: 'طعام ومشروبات',
+        description: 'حليب سائل كامل الدسم معقم ومناسب للاستهلاك اليومي.',
         quantity: 1,
         price: 22.00,
         discount: 2.00,
-        total: 20.00
+        total: 20.00,
       },
       {
-        originalName: "أرز بسمتي الشعلان 5 كج",
-        normalizedName: "أرز بسمتي",
-        category: "طعام ومشروبات",
-        description: "أرز بسمتي هندي أبيض طويل الحبة ممتاز للوجبات الرئيسية.",
+        originalName: 'أرز بسمتي الشعلان 5 كج',
+        normalizedName: 'أرز بسمتي',
+        category: 'طعام ومشروبات',
+        description: 'أرز بسمتي هندي أبيض طويل الحبة ممتاز للوجبات الرئيسية.',
         quantity: 1,
         price: 45.00,
         discount: 0.00,
-        total: 45.00
+        total: 45.00,
       },
       {
-        originalName: "دجاج مجمد دو 1000 جرام",
-        normalizedName: "دجاج مجمد",
-        category: "طعام ومشروبات",
-        description: "دجاج كامل مجمد جاهز للطهي.",
+        originalName: 'دجاج مجمد دو 1000 جرام',
+        normalizedName: 'دجاج مجمد',
+        category: 'طعام ومشروبات',
+        description: 'دجاج كامل مجمد جاهز للطهي.',
         quantity: 2,
         price: 20.00,
         discount: 0.00,
-        total: 40.00
+        total: 40.00,
       },
       {
-        originalName: "صابون يدين لايفبوي 200 مل",
-        normalizedName: "صابون يدين",
-        category: "صحة وعناية شخصية",
-        description: "منظف ومطهر سائل للعناية باليدين وحمايتهما من الجراثيم.",
+        originalName: 'صابون يدين لايفبوي 200 مل',
+        normalizedName: 'صابون يدين',
+        category: 'صحة وعناية شخصية',
+        description: 'منظف ومطهر سائل للعناية باليدين وحمايتهما من الجراثيم.',
         quantity: 1,
         price: 15.00,
         discount: 3.00,
-        total: 12.00
-      }
-    ]
+        total: 12.00,
+      },
+    ],
   };
 };
 
 /**
- * Translates an Arabic product name into a simple, general English keyword (e.g., "banana", "milk", "water")
- * suitable for image lookup APIs like LoremFlickr.
+ * Translates an Arabic product name into a simple English keyword for image lookup.
  */
 const translateProductToEnglishKeyword = async (productName) => {
   try {
@@ -402,14 +448,11 @@ const translateProductToEnglishKeyword = async (productName) => {
     Return ONLY the English word, no other text or explanation.
     `;
 
-    const text = await callNvidiaAPI([
-      { role: "user", content: prompt }
-    ], { temperature: 0.1, max_tokens: 20 });
-
+    const text = await callAI([{ role: 'user', content: prompt }], { temperature: 0.1, max_tokens: 20 });
     const cleanWord = text.trim().toLowerCase().split(/\s+/)[0].replace(/[^a-z-]/g, '');
     return cleanWord || 'grocery';
   } catch (error) {
-    console.error("Error in translateProductToEnglishKeyword AI service:", error);
+    console.error('Error in translateProductToEnglishKeyword AI service:', error);
     return 'grocery';
   }
 };
@@ -419,5 +462,5 @@ module.exports = {
   normalizeProductName,
   generateProductDescription,
   generateAIInsights,
-  translateProductToEnglishKeyword
+  translateProductToEnglishKeyword,
 };
