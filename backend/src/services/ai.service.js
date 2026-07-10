@@ -3,9 +3,9 @@ const fs = require('fs');
 // NVIDIA NIM API - OpenAI-compatible endpoint
 const NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
 // Vision model for image analysis (receipts)
-const VISION_MODEL = "nvidia/llama-3.2-90b-vision-instruct";
+const VISION_MODEL = "meta/llama-3.2-90b-vision-instruct";
 // Text-only model for text tasks
-const TEXT_MODEL = "nvidia/llama-3.3-70b-instruct";
+const TEXT_MODEL = "meta/llama-3.3-70b-instruct";
 
 /**
  * Core function to call NVIDIA NIM API
