@@ -2,29 +2,30 @@ const fs = require('fs');
 
 // NVIDIA NIM API - OpenAI-compatible endpoint
 const NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
-// Vision model for image analysis (receipts)
-const VISION_MODEL = "meta/llama-3.2-90b-vision-instruct";
-// Text-only model for text tasks
-const TEXT_MODEL = "meta/llama-3.3-70b-instruct";
+// Nemotron Omni: supports both images and text + reasoning
+const OMNI_MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning";
 
 /**
  * Core function to call NVIDIA NIM API
- * @param {string} model - Model ID
  * @param {Array} messages - Chat messages array
  * @param {Object} options - Additional options (temperature, response_format, etc.)
  */
-const callNvidiaAPI = async (model, messages, options = {}) => {
+const callNvidiaAPI = async (messages, options = {}) => {
   const apiKey = process.env.NVIDIA_API_KEY;
   if (!apiKey) {
     throw new Error("NVIDIA_API_KEY غير موجود في إعدادات السيرفر.");
   }
 
   const body = {
-    model,
+    model: OMNI_MODEL,
     messages,
-    temperature: options.temperature ?? 0.1,
-    max_tokens: options.max_tokens ?? 2048,
+    temperature: options.temperature ?? 0.6,
+    top_p: options.top_p ?? 0.95,
+    max_tokens: options.max_tokens ?? 65536,
     stream: false,
+    // Nemotron reasoning params
+    chat_template_kwargs: { enable_thinking: true },
+    reasoning_budget: 16384,
   };
 
   if (options.response_format) {
@@ -47,7 +48,14 @@ const callNvidiaAPI = async (model, messages, options = {}) => {
   }
 
   const data = await response.json();
-  return data.choices[0].message.content;
+  const message = data.choices[0].message;
+
+  // Log reasoning if available (Nemotron thinking)
+  if (message.reasoning_content) {
+    console.log("[Nemotron Reasoning]:", message.reasoning_content.substring(0, 300));
+  }
+
+  return message.content;
 };
 
 // Helper to convert file to base64 data URL
@@ -145,7 +153,7 @@ const parseReceipt = async (filePath, mimeType, existingProducts = []) => {
       setTimeout(() => reject(new Error('TIMEOUT: NVIDIA API took too long (>90s)')), 90000)
     );
 
-    const aiPromise = callNvidiaAPI(VISION_MODEL, messages, {
+    const aiPromise = callNvidiaAPI(messages, {
       temperature: 0.1,
       max_tokens: 4096,
       response_format: { type: "json_object" }
@@ -201,7 +209,7 @@ const normalizeProductName = async (scannedName, existingProducts = []) => {
     {"normalizedName": "...", "category": "..."}
     `;
 
-    const text = await callNvidiaAPI(TEXT_MODEL, [
+    const text = await callNvidiaAPI([
       { role: "user", content: prompt }
     ], {
       temperature: 0.2,
@@ -227,7 +235,7 @@ const generateProductDescription = async (productName) => {
   try {
     const prompt = `اكتب وصفاً تسويقياً/مالياً قصيراً ومحترفاً جداً باللغة العربية لمنتج استهلاكي يسمى "${productName}". الوصف يجب ألا يتجاوز جملتين مفيدتين (مثال لـ مياه: مياه معدنية نقية تستخدم للشرب والترطيب اليومي وتعتبر من المصاريف الأساسية المتكررة). أرجع النص فقط بدون أي تنسيق.`;
 
-    const text = await callNvidiaAPI(TEXT_MODEL, [
+    const text = await callNvidiaAPI([
       { role: "user", content: prompt }
     ], { temperature: 0.3 });
 
@@ -268,7 +276,7 @@ const generateAIInsights = async (expensesData, baseCurrency = "SAR") => {
     الأنواع المتاحة لـ type: warning, tip, success, price_alert
     `;
 
-    const text = await callNvidiaAPI(TEXT_MODEL, [
+    const text = await callNvidiaAPI([
       { role: "user", content: prompt }
     ], {
       temperature: 0.4,
@@ -368,7 +376,7 @@ const translateProductToEnglishKeyword = async (productName) => {
     Return ONLY the English word, no other text or explanation.
     `;
 
-    const text = await callNvidiaAPI(TEXT_MODEL, [
+    const text = await callNvidiaAPI([
       { role: "user", content: prompt }
     ], { temperature: 0.1, max_tokens: 20 });
 
