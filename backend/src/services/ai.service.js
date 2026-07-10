@@ -1,127 +1,72 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const fs = require('fs');
 
-// Initialize Gemini API
-const getGenAIInstance = () => {
-  const apiKey = process.env.GEMINI_API_KEY;
+// NVIDIA NIM API - OpenAI-compatible endpoint
+const NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
+// Vision model for image analysis (receipts)
+const VISION_MODEL = "nvidia/llama-3.2-90b-vision-instruct";
+// Text-only model for text tasks
+const TEXT_MODEL = "nvidia/llama-3.3-70b-instruct";
+
+/**
+ * Core function to call NVIDIA NIM API
+ * @param {string} model - Model ID
+ * @param {Array} messages - Chat messages array
+ * @param {Object} options - Additional options (temperature, response_format, etc.)
+ */
+const callNvidiaAPI = async (model, messages, options = {}) => {
+  const apiKey = process.env.NVIDIA_API_KEY;
   if (!apiKey) {
-    throw new Error("GEMINI_API_KEY غير موجود في إعدادات السيرفر.");
+    throw new Error("NVIDIA_API_KEY غير موجود في إعدادات السيرفر.");
   }
-  return new GoogleGenerativeAI(apiKey);
-};
 
-// Mock GenerativeModel with Fallback
-const getGenerativeModelWithFallback = (modelName) => {
-  return {
-    generateContent: async (params) => {
-      let promptText = "";
-      let imagePart = null;
-      let jsonSchema = null;
-      let temperature = 0.1;
-      let responseMimeType = null;
-
-      const isString = typeof params === 'string';
-      if (isString) {
-        promptText = params;
-      } else {
-        const parts = params.contents && params.contents[0] && params.contents[0].parts;
-        if (parts) {
-          for (const part of parts) {
-            if (part.text) promptText = part.text;
-            if (part.inlineData) imagePart = part;
-          }
-        }
-        if (params.generationConfig) {
-          jsonSchema = params.generationConfig.responseSchema;
-          temperature = params.generationConfig.temperature || 0.1;
-          responseMimeType = params.generationConfig.responseMimeType;
-        }
-      }
-
-      try {
-        const openRouterKey = process.env.OPENROUTER_API_KEY;
-        if (openRouterKey && openRouterKey.trim() !== "") {
-          const content = [];
-          
-          let finalPrompt = promptText;
-          if (responseMimeType === "application/json" && jsonSchema) {
-            finalPrompt += "\n\nIMPORTANT: You must return ONLY a valid JSON object that adheres exactly to this JSON schema:\n" + JSON.stringify(jsonSchema);
-          }
-
-          content.push({ type: "text", text: finalPrompt });
-
-          if (imagePart) {
-            content.push({
-              type: "image_url",
-              image_url: { url: `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}` }
-            });
-          }
-
-          const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${openRouterKey}`,
-              "Content-Type": "application/json",
-              "HTTP-Referer": "http://localhost:5000",
-              "X-Title": "Fawatir"
-            },
-            body: JSON.stringify({
-              model: "google/gemini-2.5-flash",
-              messages: [{ role: "user", content: content }],
-              temperature: temperature,
-              response_format: responseMimeType === "application/json" ? { type: "json_object" } : undefined
-            })
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            let text = data.choices[0].message.content;
-            
-            if (responseMimeType === "application/json") {
-              text = text.replace(/^```json\s*/i, '').replace(/\s*```$/i, '');
-            }
-            console.log("OpenRouter API used successfully.");
-            return { response: { text: () => text } };
-          } else {
-            const errText = await response.text();
-            console.warn(`OpenRouter failed with status ${response.status}: ${errText}. Falling back to Gemini...`);
-          }
-        }
-      } catch (err) {
-        console.warn(`OpenRouter error: ${err.message}. Falling back to Gemini...`);
-      }
-
-      console.log("Using Gemini SDK fallback.");
-      const genAI = getGenAIInstance();
-      const model = genAI.getGenerativeModel({ model: modelName });
-      return model.generateContent(params);
-    }
+  const body = {
+    model,
+    messages,
+    temperature: options.temperature ?? 0.1,
+    max_tokens: options.max_tokens ?? 2048,
+    stream: false,
   };
-};
 
-// Helper to convert file to generative part
-const fileToGenerativePart = (path, mimeType) => {
-  return {
-    inlineData: {
-      data: Buffer.from(fs.readFileSync(path)).toString("base64"),
-      mimeType
+  if (options.response_format) {
+    body.response_format = options.response_format;
+  }
+
+  const response = await fetch(NVIDIA_API_URL, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "Accept": "application/json",
     },
-  };
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`NVIDIA API error (${response.status}): ${errText}`);
+  }
+
+  const data = await response.json();
+  return data.choices[0].message.content;
+};
+
+// Helper to convert file to base64 data URL
+const fileToBase64DataUrl = (filePath, mimeType) => {
+  const base64 = Buffer.from(fs.readFileSync(filePath)).toString("base64");
+  return `data:${mimeType};base64,${base64}`;
 };
 
 /**
- * Parses a receipt image and returns structured financial data using Gemini 1.5 Flash
+ * Parses a receipt image and returns structured financial data using NVIDIA Vision API
  */
 const parseReceipt = async (filePath, mimeType, existingProducts = []) => {
   try {
-    const model = getGenerativeModelWithFallback("gemini-2.5-flash");
-
-    const imagePart = fileToGenerativePart(filePath, mimeType);
-    
+    const imageDataUrl = fileToBase64DataUrl(filePath, mimeType);
     const existingProductsList = existingProducts.map(p => p.name).join(', ');
 
-    const prompt = `
-    أنت محاسب ذكي وخبير في تحليل فواتير المشتريات.
+    const systemPrompt = `أنت محاسب ذكي وخبير في تحليل فواتير المشتريات. مهمتك استخراج البيانات من الفواتير بدقة متناهية وإرجاعها بصيغة JSON صحيحة فقط دون أي نص إضافي.`;
+
+    const userPrompt = `
     قم بتحليل الفاتورة المرفقة واستخراج البيانات بدقة متناهية.
     
     شروط استخراج البيانات:
@@ -152,68 +97,67 @@ const parseReceipt = async (filePath, mimeType, existingProducts = []) => {
        - discount: إجمالي خصم الفاتورة العام (إن وجد).
        - total: المجموع النهائي والكامل للفاتورة المدفوع فعلياً.
     7. احسب درجة ثقتك بقراءة البيانات (confidence) كقيمة عشرية بين 0.0 و 1.0. إذا كانت الفاتورة ضبابية أو صعبة القراءة، خفض القيمة.
+    
+    أرجع JSON فقط بهذا الشكل بدون أي نص آخر:
+    {
+      "storeName": "...",
+      "date": "YYYY-MM-DD",
+      "time": "HH:MM",
+      "currency": "SAR",
+      "tax": 0,
+      "discount": 0,
+      "total": 0,
+      "confidence": 0.9,
+      "items": [
+        {
+          "originalName": "...",
+          "normalizedName": "...",
+          "category": "...",
+          "description": "...",
+          "quantity": 1,
+          "price": 0,
+          "discount": 0,
+          "total": 0
+        }
+      ]
+    }
     `;
 
-    // Schema for structured JSON response
-    const jsonSchema = {
-      type: "object",
-      properties: {
-        storeName: { type: "string" },
-        date: { type: "string" },
-        time: { type: "string" },
-        currency: { type: "string" },
-        tax: { type: "number" },
-        discount: { type: "number" },
-        total: { type: "number" },
-        confidence: { type: "number" },
-        items: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              originalName: { type: "string" },
-              normalizedName: { type: "string" },
-              category: { type: "string" },
-              description: { type: "string" },
-              quantity: { type: "number" },
-              price: { type: "number" },
-              discount: { type: "number" },
-              total: { type: "number" }
-            },
-            required: ["originalName", "normalizedName", "category", "description", "quantity", "price", "total"]
+    const messages = [
+      { role: "system", content: systemPrompt },
+      {
+        role: "user",
+        content: [
+          {
+            type: "image_url",
+            image_url: { url: imageDataUrl }
+          },
+          {
+            type: "text",
+            text: userPrompt
           }
-        }
-      },
-      required: ["storeName", "date", "currency", "total", "items", "confidence"]
-    };
+        ]
+      }
+    ];
 
     // Add a 90-second timeout to prevent infinite hanging
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('TIMEOUT: Gemini API took too long (>90s)')), 90000)
+      setTimeout(() => reject(new Error('TIMEOUT: NVIDIA API took too long (>90s)')), 90000)
     );
 
-    const aiPromise = model.generateContent({
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            imagePart,
-            { text: prompt }
-          ]
-        }
-      ],
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: jsonSchema,
-        temperature: 0.1,
-      }
+    const aiPromise = callNvidiaAPI(VISION_MODEL, messages, {
+      temperature: 0.1,
+      max_tokens: 4096,
+      response_format: { type: "json_object" }
     });
 
-    const result = await Promise.race([aiPromise, timeoutPromise]);
+    const text = await Promise.race([aiPromise, timeoutPromise]);
+    console.log("NVIDIA Raw Parse Output:", text.substring(0, 200));
 
-    const text = result.response.text();
-    console.log("Gemini Raw Parse Output:", text.substring(0, 200));
-    return JSON.parse(text);
+    // Clean any markdown code fences if present
+    const cleaned = text.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
+    return JSON.parse(cleaned);
+
   } catch (error) {
     console.error("Error in parseReceipt AI service:", error.message);
     if (error.message.includes('TIMEOUT')) {
@@ -233,8 +177,6 @@ const parseReceipt = async (filePath, mimeType, existingProducts = []) => {
  */
 const normalizeProductName = async (scannedName, existingProducts = []) => {
   try {
-    const model = getGenerativeModelWithFallback("gemini-2.5-flash");
-
     const productsListStr = existingProducts.map(p => p.name).join(', ');
 
     const prompt = `
@@ -254,34 +196,20 @@ const normalizeProductName = async (scannedName, existingProducts = []) => {
        - "أخرى"
     4. قارن الاسم الجديد مع قائمة أسماء منتجات المستخدم الحالية المتوفرة: [${productsListStr}].
        - إذا كان هناك منتج يحمل نفس المعنى والترجمة الدقيقة (حتى لو اختلف اللفظ قليلاً)، اختر اسم المنتج القديم تماماً لتوحيدهما معاً وتفادي التكرار.
+    
+    أرجع JSON فقط بهذا الشكل بدون أي نص آخر:
+    {"normalizedName": "...", "category": "..."}
     `;
 
-    const schema = {
-      type: "object",
-      properties: {
-        normalizedName: { type: "string", description: "الاسم الموحد بالعربية الفصحى" },
-        category: { type: "string", description: "الفئة المصنفة" }
-      },
-      required: ["normalizedName", "category"]
-    };
-
-    const result = await model.generateContent({
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: prompt }
-          ]
-        }
-      ],
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: schema,
-        temperature: 0.2,
-      }
+    const text = await callNvidiaAPI(TEXT_MODEL, [
+      { role: "user", content: prompt }
+    ], {
+      temperature: 0.2,
+      response_format: { type: "json_object" }
     });
 
-    return JSON.parse(result.response.text());
+    const cleaned = text.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
+    return JSON.parse(cleaned);
   } catch (error) {
     console.error("Error in normalizeProductName AI service:", error);
     // Safe fallback
@@ -297,12 +225,13 @@ const normalizeProductName = async (scannedName, existingProducts = []) => {
  */
 const generateProductDescription = async (productName) => {
   try {
-    const model = getGenerativeModelWithFallback("gemini-2.5-flash");
+    const prompt = `اكتب وصفاً تسويقياً/مالياً قصيراً ومحترفاً جداً باللغة العربية لمنتج استهلاكي يسمى "${productName}". الوصف يجب ألا يتجاوز جملتين مفيدتين (مثال لـ مياه: مياه معدنية نقية تستخدم للشرب والترطيب اليومي وتعتبر من المصاريف الأساسية المتكررة). أرجع النص فقط بدون أي تنسيق.`;
 
-    const prompt = `اكتب وصفاً تسويقياً/مالياً قصيراً ومحترفاً جداً باللغة العربية لمنتج استهلاكي يسمى "${productName}". الوصف يجب ألا يتجاوز جملتين مفيدتين (مثال لـ مياه: مياه معدنية نقية تستخدم للشرب والترطيب اليومي وتعتبر من المصاريف الأساسية المتكررة).`;
+    const text = await callNvidiaAPI(TEXT_MODEL, [
+      { role: "user", content: prompt }
+    ], { temperature: 0.3 });
 
-    const result = await model.generateContent(prompt);
-    return result.response.text().trim();
+    return text.trim();
   } catch (error) {
     console.error("Error in generateProductDescription AI service:", error);
     return `منتج استهلاكي مصنف ضمن المصاريف الشخصية.`;
@@ -314,8 +243,6 @@ const generateProductDescription = async (productName) => {
  */
 const generateAIInsights = async (expensesData, baseCurrency = "SAR") => {
   try {
-    const model = getGenerativeModelWithFallback("gemini-2.5-flash");
-
     const expensesJson = JSON.stringify(expensesData);
 
     const prompt = `
@@ -332,39 +259,28 @@ const generateAIInsights = async (expensesData, baseCurrency = "SAR") => {
     - "ارتفع إنفاقك على فئة الطعام بنسبة 15% هذا الأسبوع مقارنة بالمتوسط."
     - "تلاحظ أن منتج 'مياه نوفا' قمت بشرائه 5 مرات بمتوسط سعر 12 ر.س، ننصح ببديل أو شراء بالجملة."
     - "تغيّر سعر منتج 'قهوة أمريكانو' من 15 ر.س إلى 18 ر.س في آخر زيارتين لمتجر X."
+    
+    أرجع JSON فقط بهذا الشكل بدون أي نص آخر (مصفوفة):
+    [
+      {"id": "1", "type": "warning", "title": "...", "content": "..."},
+      {"id": "2", "type": "tip", "title": "...", "content": "..."}
+    ]
+    الأنواع المتاحة لـ type: warning, tip, success, price_alert
     `;
 
-    const schema = {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          id: { type: "string" },
-          type: { type: "string", description: "مثلاً: warning, tip, success, price_alert" },
-          title: { type: "string", description: "عنوان مقتضب ومثير للاهتمام" },
-          content: { type: "string", description: "تفصيل النصيحة بشكل مقنع وواضح" }
-        },
-        required: ["id", "type", "title", "content"]
-      }
-    };
-
-    const result = await model.generateContent({
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: prompt }
-          ]
-        }
-      ],
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: schema,
-        temperature: 0.4
-      }
+    const text = await callNvidiaAPI(TEXT_MODEL, [
+      { role: "user", content: prompt }
+    ], {
+      temperature: 0.4,
+      max_tokens: 2048,
+      response_format: { type: "json_object" }
     });
 
-    return JSON.parse(result.response.text());
+    const cleaned = text.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
+    const parsed = JSON.parse(cleaned);
+    // Handle if model wraps in an object like { insights: [...] }
+    return Array.isArray(parsed) ? parsed : (parsed.insights || parsed.data || [parsed]);
+
   } catch (error) {
     console.error("Error in generateAIInsights AI service:", error);
     // Standard mock insights if fails
@@ -446,28 +362,17 @@ const getMockReceiptData = () => {
  */
 const translateProductToEnglishKeyword = async (productName) => {
   try {
-    const model = getGenerativeModelWithFallback("gemini-2.5-flash");
-
     const prompt = `
     Translate this Arabic item/product name to a single, general English noun suitable for search (e.g., "banana" for "موز", "milk" for "حليب كامل الدسم", "water" for "مياه معدنية", "chicken" for "صدر دجاج", "soap" for "صابون يدين").
     Product name: "${productName}"
     Return ONLY the English word, no other text or explanation.
     `;
 
-    const result = await model.generateContent({
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: prompt }]
-        }
-      ],
-      generationConfig: {
-        temperature: 0.1,
-      }
-    });
+    const text = await callNvidiaAPI(TEXT_MODEL, [
+      { role: "user", content: prompt }
+    ], { temperature: 0.1, max_tokens: 20 });
 
-    const text = result.response.text().trim().toLowerCase();
-    const cleanWord = text.split(/\s+/)[0].replace(/[^a-z-]/g, '');
+    const cleanWord = text.trim().toLowerCase().split(/\s+/)[0].replace(/[^a-z-]/g, '');
     return cleanWord || 'grocery';
   } catch (error) {
     console.error("Error in translateProductToEnglishKeyword AI service:", error);
