@@ -6,12 +6,15 @@ const NVIDIA_API_URL    = 'https://integrate.api.nvidia.com/v1/chat/completions'
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 // ─── Models ────────────────────────────────────────────────────────────────────
-const NVIDIA_MODEL      = 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning';
+// NVIDIA NIM: separate vision + text models (the reasoning "nemotron omni" model
+// emitted <think> blocks and timed out — these instruct models are fast & reliable).
+const NVIDIA_VISION_MODEL = 'meta/llama-3.2-90b-vision-instruct';
+const NVIDIA_TEXT_MODEL   = 'meta/llama-3.3-70b-instruct';
 const GEMINI_MODEL      = 'gemini-2.5-flash';
 const OPENROUTER_MODEL  = 'google/gemini-2.5-flash';
 
-// NVIDIA always times out — try it fast (20s) then move to Gemini/OpenRouter
-const NVIDIA_TIMEOUT_MS = 20000;
+// NVIDIA (instruct models) is fast; give it a real chance before falling back.
+const NVIDIA_TIMEOUT_MS = 45000;
 const FALLBACK_TIMEOUT_MS = 60000;
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -83,22 +86,37 @@ const fileToBase64DataUrl = (filePath, mimeType) => {
   return `data:${mimeType};base64,${base64}`;
 };
 
+// Detect whether any message carries an image (→ use the vision model).
+const messagesHaveImage = (messages) =>
+  messages.some(
+    (m) =>
+      Array.isArray(m.content) &&
+      m.content.some((p) => p.type === 'image_url')
+  );
+
 // ─── Provider 1: NVIDIA NIM ────────────────────────────────────────────────────
 /**
- * Calls NVIDIA NIM API (OpenAI-compatible, supports vision + text).
- * Reasoning is disabled to stay within timeout limits.
+ * Calls NVIDIA NIM API (OpenAI-compatible).
+ * Picks the vision model when the request contains an image, otherwise the
+ * text model. Both are instruct (non-reasoning) models for speed & clean JSON.
  */
 const callNvidia = async (messages, options = {}) => {
   const apiKey = process.env.NVIDIA_API_KEY;
   if (!apiKey || !apiKey.trim()) throw new Error('NVIDIA_API_KEY not configured');
 
+  const model = messagesHaveImage(messages) ? NVIDIA_VISION_MODEL : NVIDIA_TEXT_MODEL;
+  console.log(`[NVIDIA] using model: ${model}`);
+
+  // NIM caps output tokens per model; clamp so an over-large request can't 400.
+  const maxTokens = Math.min(options.max_tokens ?? 4096, 4096);
+
   // Use only standard OpenAI-compatible fields — no custom/unsupported params
   const body = {
-    model: NVIDIA_MODEL,
+    model,
     messages,
     temperature: options.temperature ?? 0.4,
     top_p: 0.9,
-    max_tokens: options.max_tokens ?? 4096,
+    max_tokens: maxTokens,
     stream: false,
   };
 
