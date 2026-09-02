@@ -374,6 +374,16 @@ const Review = ({ route, navigation }) => {
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContent}>
+          {/* AI Attribution Badge */}
+          {receipt.aiProvider ? (
+            <View style={styles.aiBadgeCard}>
+              <Ionicons name="sparkles" size={16} color={COLORS.primary} />
+              <Text style={styles.aiBadgeText}>
+                تمت القراءة بواسطة: <Text style={{ color: COLORS.primary, fontWeight: '700' }}>{receipt.aiProvider} ({receipt.aiModel || 'Flash'})</Text>
+              </Text>
+            </View>
+          ) : null}
+
           {/* AI Doubt Warning Card */}
           {receipt.confidence < 0.82 && (
             <View style={styles.warningCard}>
@@ -1310,6 +1320,21 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 350,
     borderRadius: 16,
+  },
+  aiBadgeCard: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(76, 201, 240, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(76, 201, 240, 0.3)',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  aiBadgeText: {
+    color: COLORS.text,
+    fontSize: 13,
   },
 });
 

@@ -212,9 +212,13 @@ const scanReceipt = async (req, res) => {
       });
     }
 
+    const formattedReceipt = formatReceiptFromDb(receipt);
+    formattedReceipt.aiProvider = parsedData.aiProvider || 'Google Gemini';
+    formattedReceipt.aiModel = parsedData.aiModel || 'gemini-2.5-flash';
+
     res.status(201).json({
       message: status === 'APPROVED' ? 'تم معالجة وحفظ الفاتورة تلقائياً.' : 'تمت القراءة وتتطلب الفاتورة مراجعة يدوية.',
-      receipt: formatReceiptFromDb(receipt)
+      receipt: formattedReceipt
     });
 
   } catch (error) {
