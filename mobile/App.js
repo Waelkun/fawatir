@@ -17,11 +17,17 @@ import { ActivityIndicator, View } from 'react-native';
 export default function App() {
   const [fontsLoaded] = useFonts({
     ...Ionicons.font,
+    'Ionicons': Ionicons.font.ionicons,
     ...MaterialCommunityIcons.font,
+    'MaterialCommunityIcons': MaterialCommunityIcons.font['material-community'],
     ...MaterialIcons.font,
+    'MaterialIcons': MaterialIcons.font['material'],
     ...FontAwesome.font,
+    'fontawesome': FontAwesome.font.FontAwesome,
     ...Feather.font,
+    'Feather': Feather.font.feather,
     ...AntDesign.font,
+    'AntDesign': AntDesign.font.anticon,
   });
 
   if (!fontsLoaded) {
