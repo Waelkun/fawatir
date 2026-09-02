@@ -48,7 +48,7 @@ if (staticWebDir) {
   app.use(express.static(staticWebDir));
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
-      return next();
+      return res.status(404).json({ error: 'Endpoint not found' });
     }
     res.sendFile(path.join(staticWebDir, 'index.html'));
   });
