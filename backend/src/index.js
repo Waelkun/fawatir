@@ -37,8 +37,8 @@ app.use('/api/wallets', require('./routes/wallets'));
 // Serve static web app bundle (if present)
 const fs = require('fs');
 const staticWebCandidates = [
-  path.join(__dirname, '../../mobile/dist'),
   path.join(__dirname, '../public'),
+  path.join(__dirname, '../../mobile/dist'),
   path.join(__dirname, '../dist')
 ];
 const staticWebDir = staticWebCandidates.find(dir => fs.existsSync(path.join(dir, 'index.html')));
