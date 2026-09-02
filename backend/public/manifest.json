@@ -1,0 +1,18 @@
+{
+  "short_name": "فواتير",
+  "name": "فواتير - مُتتبع المصاريف الذكي",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#0b0c13",
+  "theme_color": "#0b0c13",
+  "dir": "rtl",
+  "lang": "ar",
+  "display": "standalone",
+  "orientation": "portrait"
+}

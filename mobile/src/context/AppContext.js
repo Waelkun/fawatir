@@ -7,6 +7,11 @@ export const AppContext = createContext();
 
 // Helper to determine default API URL
 const getDefaultApiUrl = () => {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    if (window.location.origin && (window.location.origin.includes('onrender.com') || window.location.port === '5000')) {
+      return '/api';
+    }
+  }
   return 'https://fawatir2.onrender.com/api';
 };
 

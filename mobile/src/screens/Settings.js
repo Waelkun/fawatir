@@ -179,6 +179,20 @@ const Settings = () => {
         csvContent += `${r.id},"${r.storeName}",${dateStr},${r.total},${r.currency},"${statusText}"\n`;
       });
 
+      if (Platform.OS === 'web') {
+        const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', 'fawatir_receipts.csv');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        setExportingExcel(false);
+        return;
+      }
+
       const fileUri = FileSystem.cacheDirectory + 'fawatir_receipts.csv';
       await FileSystem.writeAsStringAsync(fileUri, '\uFEFF' + csvContent, {
         encoding: FileSystem.EncodingType.UTF8,
@@ -419,6 +433,22 @@ const Settings = () => {
         </body>
         </html>
       `;
+
+      if (Platform.OS === 'web') {
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+          printWindow.document.write(htmlContent);
+          printWindow.document.close();
+          printWindow.focus();
+          setTimeout(() => {
+            printWindow.print();
+          }, 300);
+        } else {
+          window.print();
+        }
+        setExportingPdf(false);
+        return;
+      }
 
       const { uri } = await Print.printToFileAsync({ html: htmlContent });
       const pdfUri = FileSystem.cacheDirectory + 'fawatir_report.pdf';

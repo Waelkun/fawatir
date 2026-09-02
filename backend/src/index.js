@@ -34,15 +34,35 @@ app.use('/api/settlements', require('./routes/settlements'));
 app.use('/api/wallets', require('./routes/wallets'));
 
 
-// Root Endpoint
-app.get('/', (req, res) => {
-  res.json({
-    name: 'AI Expense Tracker API',
-    version: '1.0.0',
-    status: 'Running',
-    aiEngine: 'Gemini 1.5 Flash'
+// Serve static web app bundle (if present)
+const fs = require('fs');
+const staticWebCandidates = [
+  path.join(__dirname, '../../mobile/dist'),
+  path.join(__dirname, '../public'),
+  path.join(__dirname, '../dist')
+];
+const staticWebDir = staticWebCandidates.find(dir => fs.existsSync(path.join(dir, 'index.html')));
+
+if (staticWebDir) {
+  console.log(`🌐 Serving Web App from: ${staticWebDir}`);
+  app.use(express.static(staticWebDir));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
+      return next();
+    }
+    res.sendFile(path.join(staticWebDir, 'index.html'));
   });
-});
+} else {
+  // Root Endpoint
+  app.get('/', (req, res) => {
+    res.json({
+      name: 'AI Expense Tracker API',
+      version: '1.0.0',
+      status: 'Running',
+      aiEngine: 'Gemini 1.5 Flash'
+    });
+  });
+}
 
 // Error handling middleware
 app.use((err, req, res, next) => {

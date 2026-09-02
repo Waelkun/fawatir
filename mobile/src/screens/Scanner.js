@@ -99,12 +99,12 @@ const Scanner = ({ navigation }) => {
 
   // No full screen blocking loader to prevent infinite hang/stuck UI
 
-  const uploadAndParseImage = async (uri) => {
+  const uploadAndParseImage = async (uri, fileObj = null) => {
     setScanning(true);
     setStatusText('يجري معالجة جودة الصورة وتصفيتها...');
     
     try {
-      const rawFilename = uri.split('/').pop();
+      const rawFilename = (typeof uri === 'string' ? uri.split('/').pop() : 'receipt.jpg') || 'receipt.jpg';
       let cleanFilename = rawFilename.split('?')[0];
 
       const hasExtension = /\.(png|jpg|jpeg|webp|pdf)$/i.test(cleanFilename);
@@ -116,7 +116,19 @@ const Scanner = ({ navigation }) => {
       const type = match ? `image/${match[1]}` : `image/jpeg`;
 
       const formData = new FormData();
-      formData.append('receipt', { uri, name: cleanFilename, type });
+      if (Platform.OS === 'web') {
+        if (fileObj) {
+          formData.append('receipt', fileObj, cleanFilename);
+        } else if (typeof uri === 'string' && (uri.startsWith('blob:') || uri.startsWith('data:') || uri.startsWith('http'))) {
+          const responseBlob = await fetch(uri);
+          const blobData = await responseBlob.blob();
+          formData.append('receipt', blobData, cleanFilename);
+        } else {
+          formData.append('receipt', uri);
+        }
+      } else {
+        formData.append('receipt', { uri, name: cleanFilename, type });
+      }
 
       setStatusText('الذكاء الاصطناعي يقرأ بنود الفاتورة...');
 
@@ -151,6 +163,24 @@ const Scanner = ({ navigation }) => {
   };
 
   const takePicture = async () => {
+    if (scanning) return;
+    if (Platform.OS === 'web') {
+      try {
+        const result = await ImagePicker.launchCameraAsync({
+          allowsEditing: false,
+          quality: 0.85,
+        });
+        if (!result.canceled && result.assets && result.assets.length > 0) {
+          const asset = result.assets[0];
+          await uploadAndParseImage(asset.uri, asset.file);
+        }
+      } catch (err) {
+        // If web direct camera is restricted, fallback to photo library
+        pickImage();
+      }
+      return;
+    }
+
     if (cameraRef.current && !scanning) {
       try {
         const photo = await cameraRef.current.takePictureAsync({ quality: 0.85 });
@@ -171,7 +201,8 @@ const Scanner = ({ navigation }) => {
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        await uploadAndParseImage(result.assets[0].uri);
+        const asset = result.assets[0];
+        await uploadAndParseImage(asset.uri, asset.file);
       }
     } catch (err) {
       alert('فشل اختيار الصورة.');

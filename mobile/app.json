@@ -18,7 +18,17 @@
       }
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro",
+      "output": "single",
+      "backgroundColor": "#0b0c13",
+      "themeColor": "#0b0c13",
+      "name": "فواتير - مُتتبع المصاريف الذكي",
+      "shortName": "فواتير",
+      "lang": "ar",
+      "dir": "rtl",
+      "display": "standalone",
+      "startUrl": "/"
     },
     "extra": {
       "eas": {
