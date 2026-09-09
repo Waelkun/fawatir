@@ -43,7 +43,9 @@
       "url": "https://u.expo.dev/b21102af-20b3-4bb7-9bad-8bd9327e2396"
     },
     "plugins": [
-      "expo-font"
+      "expo-font",
+      "expo-sharing",
+      "expo-status-bar"
     ]
   }
 }
