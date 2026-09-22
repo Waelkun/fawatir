@@ -8,7 +8,7 @@ const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 // ─── Models ────────────────────────────────────────────────────────────────────
 const GEMINI_PRIMARY_MODEL  = 'gemini-2.5-flash';
-const GEMINI_BACKUP_MODEL   = 'gemini-1.5-flash';
+const GEMINI_BACKUP_MODEL   = 'gemini-2.5-flash-lite';
 
 const OPENROUTER_PRIMARY_MODEL = 'google/gemini-2.5-flash';
 const OPENROUTER_BACKUP_MODEL  = 'meta-llama/llama-3.2-11b-vision-instruct:free';
@@ -31,6 +31,69 @@ const withTimeout = (promise, ms, providerName) => {
     setTimeout(() => reject(new Error(`TIMEOUT_${providerName}: exceeded ${ms / 1000}s`)), ms)
   );
   return Promise.race([promise, timer]);
+};
+
+/**
+ * Auto-repairs truncated or malformed JSON by closing open strings, arrays, and objects.
+ */
+const repairTruncatedJSON = (jsonString) => {
+  let str = jsonString.trim();
+
+  // Count unescaped double quotes to see if string is cut off mid-literal
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    if (ch === '\\' && !escaped) {
+      escaped = true;
+    } else {
+      if (ch === '"' && !escaped) {
+        inString = !inString;
+      }
+      escaped = false;
+    }
+  }
+
+  // If in unclosed string, close it
+  if (inString) {
+    str += '"';
+  }
+
+  // Remove trailing commas, colons or incomplete key-value fragments
+  str = str.replace(/,\s*$/, '').replace(/:\s*$/, ': null');
+
+  // Count open braces and brackets
+  const stack = [];
+  inString = false;
+  escaped = false;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    if (ch === '\\' && !escaped) {
+      escaped = true;
+    } else {
+      if (ch === '"' && !escaped) {
+        inString = !inString;
+      } else if (!inString) {
+        if (ch === '{' || ch === '[') {
+          stack.push(ch);
+        } else if (ch === '}' && stack[stack.length - 1] === '{') {
+          stack.pop();
+        } else if (ch === ']' && stack[stack.length - 1] === '[') {
+          stack.pop();
+        }
+      }
+      escaped = false;
+    }
+  }
+
+  // Close remaining open brackets/braces in reverse order
+  while (stack.length > 0) {
+    const last = stack.pop();
+    if (last === '{') str += '}';
+    else if (last === '[') str += ']';
+  }
+
+  return JSON.parse(str);
 };
 
 /**
@@ -82,6 +145,13 @@ const extractJSON = (text) => {
     }
   }
 
+  // Attempt auto-repair on truncated JSON
+  try {
+    const repaired = repairTruncatedJSON(sub);
+    console.warn('[extractJSON] Successfully auto-repaired truncated JSON from model response.');
+    return repaired;
+  } catch (_) {}
+
   console.error('[extractJSON] Bracket matching failed. Full text:', text.substring(0, 1000));
   throw new Error('Could not extract valid JSON from model response');
 };
@@ -128,11 +198,18 @@ const callGemini = async (messages, options = {}) => {
 
   const generationConfig = {
     temperature: options.temperature ?? 0.1,
-    maxOutputTokens: Math.min(options.max_tokens ?? 4096, 4096),
+    maxOutputTokens: options.max_tokens ?? 8192,
   };
 
   if (options.jsonMode) {
     generationConfig.responseMimeType = 'application/json';
+  }
+
+  // Turn off internal thinking tokens for structured JSON/OCR tasks by default to prevent token starvation
+  if (options.thinkingBudget !== undefined) {
+    generationConfig.thinkingConfig = { thinkingBudget: options.thinkingBudget };
+  } else if (options.jsonMode) {
+    generationConfig.thinkingConfig = { thinkingBudget: 0 };
   }
 
   // Try primary model then backup
@@ -146,8 +223,24 @@ const callGemini = async (messages, options = {}) => {
         contents: [{ role: 'user', parts }],
         generationConfig,
       });
+
+      const candidate = result.response.candidates?.[0];
+      if (candidate?.finishReason === 'MAX_TOKENS') {
+        throw new Error(`Gemini model ${modelName} reached MAX_TOKENS limit (response was truncated)`);
+      }
+
+      const content = result.response.text();
+      if (!content || !content.trim()) {
+        throw new Error(`Empty response from Gemini model ${modelName}`);
+      }
+
+      // If in JSON mode, validate that valid JSON can be extracted before claiming success
+      if (options.jsonMode) {
+        extractJSON(content);
+      }
+
       return {
-        content: result.response.text(),
+        content,
         provider: 'Google Gemini',
         model: modelName
       };
@@ -175,7 +268,7 @@ const callOpenRouter = async (messages, options = {}) => {
         model: modelName,
         messages,
         temperature: options.temperature ?? 0.1,
-        max_tokens: Math.min(options.max_tokens ?? 3000, 3000), // Protect token limit
+        max_tokens: Math.min(options.max_tokens ?? 2500, 2500), // Protect token limit
       };
 
       if (options.jsonMode) {
@@ -200,7 +293,11 @@ const callOpenRouter = async (messages, options = {}) => {
 
       const data = await res.json();
       const content = data.choices?.[0]?.message?.content;
-      if (!content) throw new Error('Empty response from OpenRouter');
+      if (!content || !content.trim()) throw new Error('Empty response from OpenRouter');
+
+      if (options.jsonMode) {
+        extractJSON(content);
+      }
 
       return {
         content,
@@ -252,7 +349,11 @@ const callNvidia = async (messages, options = {}) => {
 
   const data = await res.json();
   const message = data.choices?.[0]?.message;
-  if (!message || !message.content) throw new Error('Empty response from NVIDIA NIM');
+  if (!message || !message.content || !message.content.trim()) throw new Error('Empty response from NVIDIA NIM');
+
+  if (options.jsonMode) {
+    extractJSON(message.content);
+  }
 
   return {
     content: message.content,
@@ -342,8 +443,20 @@ const parseReceipt = async (filePath, mimeType, existingProducts = []) => {
       },
     ];
 
-    const aiResult = await callAI(messages, { temperature: 0.1, max_tokens: 3500, jsonMode: true });
+    const aiResult = await callAI(messages, { temperature: 0.1, max_tokens: 8192, jsonMode: true, thinkingBudget: 0 });
     const parsedData = extractJSON(aiResult.content);
+
+    // Safeguard essential fields for database creation
+    parsedData.storeName = parsedData.storeName || 'متجر غير معروف';
+    parsedData.date = parsedData.date || new Date().toISOString().split('T')[0];
+    parsedData.currency = parsedData.currency || 'SAR';
+    parsedData.tax = Number(parsedData.tax) || 0;
+    parsedData.discount = Number(parsedData.discount) || 0;
+    parsedData.items = Array.isArray(parsedData.items) ? parsedData.items : [];
+
+    const itemsTotal = parsedData.items.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
+    parsedData.total = Number(parsedData.total) || itemsTotal || 0;
+    parsedData.confidence = typeof parsedData.confidence === 'number' ? parsedData.confidence : 0.95;
 
     // Attach attribution
     parsedData.aiProvider = aiResult.provider;
@@ -375,7 +488,7 @@ const normalizeProductName = async (scannedName, existingProducts = []) => {
     أرجع JSON فقط: {"normalizedName": "...", "category": "..."}
     `;
 
-    const aiResult = await callAI([{ role: 'user', content: prompt }], { temperature: 0.2, jsonMode: true });
+    const aiResult = await callAI([{ role: 'user', content: prompt }], { temperature: 0.2, jsonMode: true, thinkingBudget: 0 });
     return extractJSON(aiResult.content);
   } catch (error) {
     console.error('Error in normalizeProductName AI service:', error);
@@ -423,7 +536,7 @@ const generateAIInsights = async (expensesData, baseCurrency = 'SAR') => {
     الأنواع المتاحة لـ type: warning, tip, success, price_alert
     `;
 
-    const aiResult = await callAI([{ role: 'user', content: prompt }], { temperature: 0.4, max_tokens: 3000, jsonMode: true });
+    const aiResult = await callAI([{ role: 'user', content: prompt }], { temperature: 0.4, max_tokens: 4096, jsonMode: true, thinkingBudget: 0 });
     const parsed = extractJSON(aiResult.content);
     return Array.isArray(parsed) ? parsed : (parsed.insights || parsed.data || [parsed]);
 

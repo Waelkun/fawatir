@@ -92,8 +92,9 @@ const scanReceipt = async (req, res) => {
     const savedItems = [];
     const localProducts = [...existingProducts];
 
-    for (const item of parsedData.items) {
-      const normName = item.normalizedName ? item.normalizedName.trim() : item.originalName.trim();
+    for (const item of (parsedData.items || [])) {
+      const origName = (item.originalName || item.normalizedName || 'منتج غير محدد').trim();
+      const normName = item.normalizedName ? item.normalizedName.trim() : origName;
       const cat = item.category || 'أخرى';
       const desc = item.description || 'منتج استهلاكي.';
 
@@ -124,7 +125,6 @@ const scanReceipt = async (req, res) => {
       }
 
       // Add original scanned name to aliases if it's different and not already existing
-      const origName = item.originalName.trim();
       if (origName !== product.name) {
         const aliasExists = await prisma.productAlias.findFirst({
           where: { productId: product.id, alias: origName }
@@ -138,7 +138,7 @@ const scanReceipt = async (req, res) => {
 
       savedItems.push({
         productId: product.id,
-        originalName: item.originalName,
+        originalName: origName,
         quantity: item.quantity || 1,
         price: Math.round((item.price || 0) * 100),
         discount: Math.round((item.discount || 0) * 100),
@@ -165,11 +165,13 @@ const scanReceipt = async (req, res) => {
     const relativeEnhancedPath = path.relative(path.join(__dirname, '../..'), enhancedPath).replace(/\\/g, '/');
 
     // 5. Save Receipt to DB
+    const receiptDate = !isNaN(new Date(parsedData.date).getTime()) ? new Date(parsedData.date) : new Date();
+
     const receipt = await prisma.receipt.create({
       data: {
         userId,
-        storeName: parsedData.storeName,
-        date: new Date(parsedData.date),
+        storeName: parsedData.storeName || 'متجر غير معروف',
+        date: receiptDate,
         total: parsedTotalInCents,
         currency: parsedData.currency || 'SAR',
         tax: taxInCents,
