@@ -1,7 +1,7 @@
 # Fawatir (فواتير) — Smart AI Receipt & Expense Management System
 
 <p align="center">
-  <img src="docs/screenshots/fawatir-app-icon.png" alt="Fawatir App Icon" width="120" style="border-radius: 24px;" />
+  <img src="docs/screenshots/fawatir-brand-icon.png" alt="Fawatir App Icon" width="120" style="border-radius: 24px;" />
 </p>
 
 <p align="center">
